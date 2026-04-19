@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GSC Intel Engine | Visibility Governance</title>
+    <style>
+        :root {
+            --bg: #030303;
+            --indigo: #818cf8;
+            --teal: #2dd4bf;
+            --amber: #fbbf24;
+            --glass: rgba(10, 10, 10, 0.9);
+            --border: rgba(255, 255, 255, 0.08);
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --phi: 1.618;
+            --spacing-unit: 21px; /* Fibonacci based */
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; cursor: crosshair; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'IBM Plex Mono', 'Inter', monospace;
+            font-size: 14px;
+            line-height: var(--phi);
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            filter: blur(1px);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: calc(var(--spacing-unit) * 5) var(--spacing-unit);
+            display: flex;
+            flex-direction: column;
+            gap: calc(var(--spacing-unit) * 3);
+        }
+
+        .capsule {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            padding: calc(var(--spacing-unit) * 2);
+            position: relative;
+        }
+
+        .capsule::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 2px;
+            height: 100%;
+            background: var(--indigo);
+            opacity: 0.5;
+        }
+
+        h1 { font-size: 3.4rem; color: var(--indigo); letter-spacing: -0.05em; font-weight: 800; line-height: 1; margin-bottom: var(--spacing-unit); }
+        h2 { font-size: 1.3rem; color: var(--teal); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: var(--spacing-unit); }
+        h3 { font-size: 1rem; color: var(--amber); margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); display: inline-block; }
+        
+        p { color: var(--text-dim); margin-bottom: var(--spacing-unit); font-family: 'Inter', sans-serif; }
+
+        .metric-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-unit);
+            margin-top: var(--spacing-unit);
+        }
+
+        .code-block {
+            background: #000;
+            padding: var(--spacing-unit);
+            border: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--teal);
+            font-size: 0.85rem;
+            margin: var(--spacing-unit) 0;
+            position: relative;
+            overflow-x: auto;
+        }
+
+        .step-label {
+            color: var(--amber);
+            font-size: 0.7rem;
+            letter-spacing: 0.3em;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        .visual-node {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--indigo), transparent);
+            margin: var(--spacing-unit) 0;
+        }
+
+        @media (max-width: 600px) {
+            h1 { font-size: 2.2rem; }
+            .metric-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="container">
+        <!-- NODE 01: IDENTITY -->
+        <header class="capsule">
+            <span class="step-label">IDENTITY // 01</span>
+            <h1>Intel Engine</h1>
+            <p>The Search Console as a Visibility Governance platform. Stop tracking ranks; start governing citations in the generative era.</p>
+            <div class="visual-node"></div>
+        </header>
+
+        <!-- NODE 02: THE SHIFT -->
+        <section class="capsule">
+            <span class="step-label">SIGNAL // 02</span>
+            <h2>The Answer Engine Shift</h2>
+            <p>Users don't browse; they retrieve. The GSC Intel Engine surfaces the delta between **Destination Value** (Clicks) and **Reference Value** (AI Citations).</p>
+            
+            <div class="metric-row">
+                <div>
+                    <h3>Silent Cannibalization</h3>
+                    <p>Identify where you rank #1.0 but CTR is &lt; 1%. You are the answer, but not the destination.</p>
+                </div>
+                <div>
+                    <h3>Semantic Authority</h3>
+                    <p>Detect long-tail "Prompter" queries (7+ words) where users use Google as a retrieval bridge to your logic.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- NODE 03: DEPLOYMENT -->
+        <section class="capsule">
+            <span class="step-label">STRUCTURE // 03</span>
+            <h2>The Protocol</h2>
+            
+            <div style="margin-top: var(--spacing-unit);">
+                <h3>I. Installation</h3>
+                <div class="code-block">pip install google-search-console-mcp</div>
+            </div>
+
+            <div style="margin-top: var(--spacing-unit);">
+                <h3>II. Authentication</h3>
+                <p>Secure Service Account JSON integration. Authoritative API signals only.</p>
+            </div>
+
+            <div style="margin-top: var(--spacing-unit);">
+                <h3>III. Execution</h3>
+                <div class="code-block">
+{
+  "command": "gsc-mcp",
+  "env": {
+    "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/key.json",
+    "GSC_SITE_URL": "sc-domain:example.com"
+  }
+}</div>
+            </div>
+        </section>
+
+        <!-- NODE 04: CAPABILITIES -->
+        <section class="capsule">
+            <span class="step-label">LOGIC // 04</span>
+            <h2>The Toolkit</h2>
+            <div class="metric-row">
+                <div>
+                    <h3>get_search_appearance_audit</h3>
+                    <p>Server-side join of appearance and query data to detect click-loss.</p>
+                </div>
+                <div>
+                    <h3>get_intent_segmentation</h3>
+                    <p>Machine-learned heuristics for Searcher vs. Prompter analysis.</p>
+                </div>
+            </div>
+            <div class="metric-row" style="margin-top: 0;">
+                <div>
+                    <h3>inspect_url</h3>
+                    <p>Direct authoritative bridge to Google's indexing verdict.</p>
+                </div>
+                <div>
+                    <h3>get_technical_citation_audit</h3>
+                    <p>Indexing health overlays for highest-visibility reference pages.</p>
+                </div>
+            </div>
+        </section>
+
+        <footer style="color: var(--text-dim); font-size: 0.7rem; text-align: center; margin-top: 5rem;">
+            SYSTEM STATUS: OPERATIONAL // GROUNDED IN TRUTH
+        </footer>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let particles = [];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.radius = Math.random() * 1.5;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.x < 0 || this.x > width) this.vx *= -1;
+                if (this.y < 0 || this.y > height) this.vy *= -1;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#818cf8';
+                ctx.fill();
+            }
+        }
+
+        for (let i = 0; i < 60; i++) particles.push(new Particle());
+
+        function drawConnections() {
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 150) {
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.strokeStyle = `rgba(45, 212, 191, ${1 - dist / 150})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            drawConnections();
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
