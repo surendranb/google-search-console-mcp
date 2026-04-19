@@ -4,6 +4,12 @@
 
 # Google Search Console MCP "Intel Engine" 🚀
 
+[![PyPI version](https://badge.fury.io/py/google-search-console-mcp.svg)](https://badge.fury.io/py/google-search-console-mcp)
+[![PyPI Downloads](https://static.pepy.tech/badge/google-search-console-mcp)](https://pepy.tech/projects/google-search-console-mcp)
+[![GitHub stars](https://img.shields.io/github/stars/surendranb/google-search-console-mcp?style=social)](https://github.com/surendranb/google-search-console-mcp/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/surendranb/google-search-console-mcp?style=social)](https://github.com/surendranb/google-search-console-mcp/network/members)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **The Authority-Based Visibility Governance Tool for the Evolving Search Landscape.**
 
 This is not just a data wrapper. It is a strategic "Intel" engine that transforms raw Google Search Console signals into actionable marketing insights. It is designed for marketers who need to understand their performance in a search landscape increasingly defined by AI Overviews and conversational search. **Compatible with any MCP-compliant AI Agent.**
