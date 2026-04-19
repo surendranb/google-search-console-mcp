@@ -4,9 +4,9 @@
 
 # Google Search Console MCP "Intel Engine" 🚀
 
-**The Authority-Based Visibility Governance Tool for 2026.**
+**The Authority-Based Visibility Governance Tool for the Evolving Search Landscape.**
 
-This is not just a data wrapper. It is a strategic "Intel" engine that transforms raw Google Search Console signals into actionable marketing insights. It is designed for marketers who need to understand their performance in a search landscape dominated by AI Overviews and conversational search.
+This is not just a data wrapper. It is a strategic "Intel" engine that transforms raw Google Search Console signals into actionable marketing insights. It is designed for marketers who need to understand their performance in a search landscape increasingly defined by AI Overviews and conversational search. **Compatible with any MCP-compliant AI Agent.**
 
 ## 🎯 Authoritative "Intel" Tools
 
@@ -21,7 +21,7 @@ This is not just a data wrapper. It is a strategic "Intel" engine that transform
 
 ---
 
-## 🚀 Getting Started (April 2026)
+## 🚀 Getting Started
 
 ### 1. Google Search Console Setup
 Before installing the MCP server, you must configure Google Cloud and Search Console access:
@@ -47,8 +47,8 @@ Before installing the MCP server, you must configure Google Cloud and Search Con
 pip install google-search-console-mcp
 ```
 
-### 3. Configuration (Claude / Cursor)
-Add this to your MCP settings file:
+### 3. Configuration (Universal AI Agent)
+Add this to your agent's MCP settings file:
 ```json
 {
   "mcpServers": {
@@ -65,27 +65,8 @@ Add this to your MCP settings file:
 
 ---
 
-## 📊 How to Use the "Intel"
-
-### 1. The Cannibalization Audit
-Ask: *"Perform a search appearance audit. Is my content being cannibalized by AI Overviews?"*
-- **What it does:** It checks for queries where you rank #1 but have a CTR < 1%. 
-- **The Insight:** If yes, you are a "Reference Source" and need to add gated content or dynamic tools to that page to pull the user in.
-
-### 2. The Intent Shift
-Ask: *"Run an intent segmentation. How many of my users are 'Prompters'?"*
-- **What it does:** It identifies natural language queries (7+ words) that are actually LLM prompts being redirected to your site.
-- **The Insight:** This shows your "Semantic Authority." High "Prompter" volume means you are the authoritative source for complex explanations.
-
-### 3. The Technical Health Check
-Ask: *"Run a technical citation audit on my most visible pages."*
-- **What it does:** It pulls your top-impressions pages and runs a real-time URL inspection.
-- **The Insight:** It will tell you if a "Discovered - currently not indexed" error is preventing your best content from being used as a reference.
-
----
-
 ## 🛠️ Project Philosophy
-We follow the **Karpathy Standard** of surgical engineering:
+This project focuses on **high-leverage data analysis** for modern search:
 - **Simplicity First**: Minimum code for maximum insight.
 - **Token Efficiency**: Server-side aggregation prevents "Context Length" issues.
 - **Authoritative Data**: We only use official Google Search Console API signals. No speculative "AI SEO" hacks.

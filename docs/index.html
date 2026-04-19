@@ -3,274 +3,203 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GSC Intel Engine | Visibility Governance</title>
+    <title>GSC MCP Server | Chat-Based SEO Intelligence</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #030303;
-            --indigo: #818cf8;
-            --teal: #2dd4bf;
-            --amber: #fbbf24;
-            --glass: rgba(10, 10, 10, 0.9);
-            --border: rgba(255, 255, 255, 0.08);
-            --text: #f8fafc;
-            --text-dim: #94a3b8;
-            --phi: 1.618;
-            --spacing-unit: 21px; /* Fibonacci based */
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --text-soft: #666666;
+            --border: #eeeeee;
+            --primary: #2563eb;
+            --claude-bg: #f9f9f8;
+            --user-bubble: #ebebeb;
+            --ai-bubble: #ffffff;
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; cursor: crosshair; }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: var(--bg);
+            font-family: 'Inter', -apple-system, sans-serif;
             color: var(--text);
-            font-family: 'IBM Plex Mono', 'Inter', monospace;
-            font-size: 14px;
-            line-height: var(--phi);
-            overflow-x: hidden;
+            line-height: 1.6;
+            background: var(--bg);
+        }
+
+        .container { max-width: 800px; margin: 0 auto; padding: 0 1.5rem; }
+
+        header { padding: 5rem 0 3rem; text-align: center; }
+        h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 1rem; letter-spacing: -0.02em; }
+        .tagline { font-size: 1.25rem; color: var(--text-soft); max-width: 600px; margin: 0 auto; }
+
+        section { padding: 4rem 0; border-top: 1px solid var(--border); }
+        h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 2rem; text-align: center; }
+
+        /* The Chat Interface Mockup */
+        .chat-window {
+            background: var(--claude-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05);
+            margin: 2rem 0;
+        }
+        .chat-header {
+            padding: 0.75rem 1.5rem;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-soft);
             display: flex;
-            flex-direction: column;
             align-items: center;
+            gap: 0.5rem;
         }
+        .status-dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; }
 
-        #canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            z-index: -1;
-            filter: blur(1px);
-        }
-
-        .container {
-            width: 100%;
-            max-width: 800px;
-            padding: calc(var(--spacing-unit) * 5) var(--spacing-unit);
-            display: flex;
-            flex-direction: column;
-            gap: calc(var(--spacing-unit) * 3);
-        }
-
-        .capsule {
-            background: var(--glass);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--border);
-            padding: calc(var(--spacing-unit) * 2);
-            position: relative;
-        }
-
-        .capsule::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 2px;
-            height: 100%;
-            background: var(--indigo);
-            opacity: 0.5;
-        }
-
-        h1 { font-size: 3.4rem; color: var(--indigo); letter-spacing: -0.05em; font-weight: 800; line-height: 1; margin-bottom: var(--spacing-unit); }
-        h2 { font-size: 1.3rem; color: var(--teal); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: var(--spacing-unit); }
-        h3 { font-size: 1rem; color: var(--amber); margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); display: inline-block; }
+        .chat-body { padding: 2rem; display: flex; flex-direction: column; gap: 2rem; }
         
-        p { color: var(--text-dim); margin-bottom: var(--spacing-unit); font-family: 'Inter', sans-serif; }
+        .bubble { padding: 1rem 1.25rem; border-radius: 18px; max-width: 85%; font-size: 0.95rem; }
+        .user-msg { background: var(--user-bubble); align-self: flex-end; border-bottom-right-radius: 4px; }
+        .ai-msg { background: var(--ai-bubble); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
 
-        .metric-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--spacing-unit);
-            margin-top: var(--spacing-unit);
-        }
-
-        .code-block {
-            background: #000;
-            padding: var(--spacing-unit);
-            border: 1px solid var(--border);
-            font-family: 'IBM Plex Mono', monospace;
-            color: var(--teal);
+        .mcp-tool {
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            margin: 1rem 0;
+            font-family: ui-monospace, monospace;
             font-size: 0.85rem;
-            margin: var(--spacing-unit) 0;
-            position: relative;
+            color: #475569;
+        }
+        .tool-call { color: var(--primary); font-weight: 600; margin-bottom: 0.25rem; display: block; }
+
+        /* Benefits Grid */
+        .benefits { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .benefit-item h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--primary); }
+        .benefit-item p { font-size: 0.95rem; color: var(--text-soft); }
+
+        /* Setup Steps */
+        .setup-steps { list-style: none; counter-reset: step; }
+        .setup-steps li { margin-bottom: 2rem; position: relative; padding-left: 3rem; }
+        .setup-steps li::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 32px;
+            height: 32px;
+            background: var(--text);
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            font-weight: 700;
+        }
+
+        pre {
+            background: #f4f4f5;
+            padding: 1rem;
+            border-radius: 8px;
             overflow-x: auto;
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            border: 1px solid var(--border);
         }
+        code { color: #d946ef; }
 
-        .step-label {
-            color: var(--amber);
-            font-size: 0.7rem;
-            letter-spacing: 0.3em;
-            display: block;
-            margin-bottom: 0.5rem;
-        }
+        footer { padding: 4rem 0; text-align: center; font-size: 0.875rem; color: var(--text-soft); border-top: 1px solid var(--border); }
 
-        .visual-node {
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--indigo), transparent);
-            margin: var(--spacing-unit) 0;
-        }
-
-        @media (max-width: 600px) {
-            h1 { font-size: 2.2rem; }
-            .metric-row { grid-template-columns: 1fr; }
+        @media (max-width: 640px) {
+            .benefits { grid-template-columns: 1fr; }
+            h1 { font-size: 1.75rem; }
         }
     </style>
 </head>
 <body>
-    <canvas id="canvas"></canvas>
 
     <div class="container">
-        <!-- NODE 01: IDENTITY -->
-        <header class="capsule">
-            <span class="step-label">IDENTITY // 01</span>
-            <h1>Intel Engine</h1>
-            <p>The Search Console as a Visibility Governance platform. Stop tracking ranks; start governing citations in the generative era.</p>
-            <div class="visual-node"></div>
+        <header>
+            <h1>Google Search Console MCP</h1>
+            <p class="tagline">An authoritative bridge between Search Console signals and the universal AI Agent ecosystem.</p>
         </header>
 
-        <!-- NODE 02: THE SHIFT -->
-        <section class="capsule">
-            <span class="step-label">SIGNAL // 02</span>
-            <h2>The Answer Engine Shift</h2>
-            <p>Users don't browse; they retrieve. The GSC Intel Engine surfaces the delta between **Destination Value** (Clicks) and **Reference Value** (AI Citations).</p>
-            
-            <div class="metric-row">
-                <div>
-                    <h3>Silent Cannibalization</h3>
-                    <p>Identify where you rank #1.0 but CTR is &lt; 1%. You are the answer, but not the destination.</p>
+        <section id="interface">
+            <h2>The Experience</h2>
+            <div class="chat-window">
+                <div class="chat-header">
+                    <div class="status-dot"></div> GSC MCP Server Connected
                 </div>
-                <div>
-                    <h3>Semantic Authority</h3>
-                    <p>Detect long-tail "Prompter" queries (7+ words) where users use Google as a retrieval bridge to your logic.</p>
+                <div class="chat-body">
+                    <!-- Interaction 1 -->
+                    <div class="bubble user-msg">
+                        "Is my content being cannibalized by AI Overviews? Run an audit."
+                    </div>
+                    <div class="bubble ai-msg">
+                        <div class="mcp-tool">
+                            <span class="tool-call">gsc-search.get_search_appearance_audit()</span>
+                            <span>Searching for High Position / Low CTR patterns...</span>
+                        </div>
+                        I've identified 34 queries with high cannibalization risk. Your page on <strong>"system prompts"</strong> ranks #1.1 but has a 0.4% CTR. Users are likely getting the full answer from the Google snippet.
+                    </div>
+
+                    <!-- Interaction 2 -->
+                    <div class="bubble user-msg">
+                        "Check the technical health of that page. Why is CTR so low?"
+                    </div>
+                    <div class="bubble ai-msg">
+                        <div class="mcp-tool">
+                            <span class="tool-call">gsc-search.get_technical_citation_audit()</span>
+                            <span>Inspecting URL: https://yoursite.com/system-prompts</span>
+                        </div>
+                        The page is technically perfect (Indexed, Mobile-Friendly). The low CTR isn't a technical error—it's <strong>Intent Satisfaction</strong>. You should add a dynamic tool or interactive element to pull users in.
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- NODE 03: DEPLOYMENT -->
-        <section class="capsule">
-            <span class="step-label">STRUCTURE // 03</span>
-            <h2>The Protocol</h2>
-            
-            <div style="margin-top: var(--spacing-unit);">
-                <h3>I. Installation</h3>
-                <div class="code-block">pip install google-search-console-mcp</div>
-            </div>
+        <section id="benefits">
+            <h2>Core Benefits</h2>
+            <ul style="max-width: 600px; margin: 0 auto; font-size: 1.05rem; color: var(--text-soft); line-height: 2;">
+                <li><strong>Stop Cannibalization:</strong> Automatically detect where you are serving as a "Silent Reference" in AI Overviews without earning clicks.</li>
+                <li><strong>Understand Intent:</strong> Segment traffic into "Searchers" vs "Prompters" to see how audience behavior is shifting.</li>
+                <li><strong>Technical Verdicts:</strong> Get real-time indexing and usability status for your most visible pages directly in the chat.</li>
+                <li><strong>Context Efficiency:</strong> Analyzes large properties without overflowing your Agent's context window through server-side aggregation.</li>
+            </ul>
+        </section>
 
-            <div style="margin-top: var(--spacing-unit);">
-                <h3>II. Authentication</h3>
-                <p>Secure Service Account JSON integration. Authoritative API signals only.</p>
-            </div>
-
-            <div style="margin-top: var(--spacing-unit);">
-                <h3>III. Execution</h3>
-                <div class="code-block">
-{
+        <section id="setup">
+            <h2>Quick Setup</h2>
+            <ul class="setup-steps">
+                <li>
+                    <strong>Install the package</strong>
+                    <pre><code>pip install google-search-console-mcp</code></pre>
+                </li>
+                <li>
+                    <strong>Connect Google Search Console</strong>
+                    <p>Create a Service Account JSON key in Google Cloud and grant it access to your GSC property.</p>
+                </li>
+                <li>
+                    <strong>Configure your AI Agent</strong>
+                    <p>Add the server to your agent configuration file.</p>
+                    <pre><code>{
   "command": "gsc-mcp",
   "env": {
-    "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/key.json",
-    "GSC_SITE_URL": "sc-domain:example.com"
+    "GSC_SITE_URL": "sc-domain:yoursite.com",
+    "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/key.json"
   }
-}</div>
-            </div>
+}</code></pre>
+                </li>
+            </ul>
         </section>
 
-        <!-- NODE 04: CAPABILITIES -->
-        <section class="capsule">
-            <span class="step-label">LOGIC // 04</span>
-            <h2>The Toolkit</h2>
-            <div class="metric-row">
-                <div>
-                    <h3>get_search_appearance_audit</h3>
-                    <p>Server-side join of appearance and query data to detect click-loss.</p>
-                </div>
-                <div>
-                    <h3>get_intent_segmentation</h3>
-                    <p>Machine-learned heuristics for Searcher vs. Prompter analysis.</p>
-                </div>
-            </div>
-            <div class="metric-row" style="margin-top: 0;">
-                <div>
-                    <h3>inspect_url</h3>
-                    <p>Direct authoritative bridge to Google's indexing verdict.</p>
-                </div>
-                <div>
-                    <h3>get_technical_citation_audit</h3>
-                    <p>Indexing health overlays for highest-visibility reference pages.</p>
-                </div>
-            </div>
-        </section>
-
-        <footer style="color: var(--text-dim); font-size: 0.7rem; text-align: center; margin-top: 5rem;">
-            SYSTEM STATUS: OPERATIONAL // GROUNDED IN TRUTH
+        <footer>
+            Built for Authoritative Insights. Grounded in the Evolving Search Landscape.
         </footer>
     </div>
 
-    <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        let width, height;
-        let particles = [];
-
-        function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-        }
-
-        window.addEventListener('resize', resize);
-        resize();
-
-        class Particle {
-            constructor() {
-                this.x = Math.random() * width;
-                this.y = Math.random() * height;
-                this.vx = (Math.random() - 0.5) * 0.5;
-                this.vy = (Math.random() - 0.5) * 0.5;
-                this.radius = Math.random() * 1.5;
-            }
-
-            update() {
-                this.x += this.vx;
-                this.y += this.vy;
-                if (this.x < 0 || this.x > width) this.vx *= -1;
-                if (this.y < 0 || this.y > height) this.vy *= -1;
-            }
-
-            draw() {
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = '#818cf8';
-                ctx.fill();
-            }
-        }
-
-        for (let i = 0; i < 60; i++) particles.push(new Particle());
-
-        function drawConnections() {
-            for (let i = 0; i < particles.length; i++) {
-                for (let j = i + 1; j < particles.length; j++) {
-                    const dx = particles[i].x - particles[j].x;
-                    const dy = particles[i].y - particles[j].y;
-                    const dist = Math.hypot(dx, dy);
-                    if (dist < 150) {
-                        ctx.beginPath();
-                        ctx.moveTo(particles[i].x, particles[i].y);
-                        ctx.lineTo(particles[j].x, particles[j].y);
-                        ctx.strokeStyle = `rgba(45, 212, 191, ${1 - dist / 150})`;
-                        ctx.lineWidth = 0.5;
-                        ctx.stroke();
-                    }
-                }
-            }
-        }
-
-        function animate() {
-            ctx.clearRect(0, 0, width, height);
-            particles.forEach(p => {
-                p.update();
-                p.draw();
-            });
-            drawConnections();
-            requestAnimationFrame(animate);
-        }
-
-        animate();
-    </script>
 </body>
 </html>

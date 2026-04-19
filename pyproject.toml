@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "google-search-console-mcp"
 version = "0.3.0"
-description = "The GSC 'Intel Engine' for 2026. Authoritative visibility governance and AI overview citation analysis via Model Context Protocol."
+description = "The GSC 'Intel Engine' for the evolving search landscape. Authoritative visibility governance and AI overview citation analysis via Model Context Protocol."
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
