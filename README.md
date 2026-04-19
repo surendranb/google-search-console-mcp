@@ -23,24 +23,37 @@ This is not just a data wrapper. It is a strategic "Intel" engine that transform
 
 ## 🚀 Getting Started (April 2026)
 
-### Prerequisites
-- Python 3.11+
-- Google Search Console property with data
-- Service account JSON key file
+### 1. Google Search Console Setup
+Before installing the MCP server, you must configure Google Cloud and Search Console access:
 
-### Installation
+**A. Create Service Account:**
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project and enable the **Google Search Console API**.
+3. Go to **APIs & Services > Credentials** and create a **Service Account**.
+4. Create a **JSON Key** for the service account and download it (save as `gsc-key.json`).
+
+**B. Grant Access in Search Console:**
+1. Open your JSON key file and copy the `client_email` address.
+2. Go to [Google Search Console](https://search.google.com/search-console).
+3. Select your property and go to **Settings > Users and Permissions**.
+4. Click **Add User**, paste the service account email, and select **Full** permissions.
+
+**C. Identify Your Property URL:**
+- For **Domain properties**, use the format: `sc-domain:example.com`
+- For **URL-prefix properties**, use the full URL: `https://example.com/`
+
+### 2. Installation
 ```bash
 pip install google-search-console-mcp
 ```
 
-### Configuration (Claude / Cursor)
-Add this to your MCP settings:
+### 3. Configuration (Claude / Cursor)
+Add this to your MCP settings file:
 ```json
 {
   "mcpServers": {
     "gsc-search": {
-      "command": "python",
-      "args": ["-m", "gsc_mcp_server"],
+      "command": "gsc-mcp",
       "env": {
         "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/your/gsc-key.json",
         "GSC_SITE_URL": "sc-domain:example.com"
