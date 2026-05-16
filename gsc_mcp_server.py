@@ -116,46 +116,50 @@ def get_search_analytics(
     filters=None,
     search_type="web",
     row_limit=1000,
-    start_row=0
+    start_row=0,
+    summary_only=False
 ):
     """
     Retrieve Google Search Console search analytics data.
-    
+
     Args:
-        dimensions: List of dimensions from: country, device, page, query, searchAppearance, date
+        dimensions: List of dimensions from: country, device, page, query, searchAppearance, date.
+            Accepts a real list (["page", "query"]) or a JSON-encoded string ('["page","query"]').
+            Some MCP transports forward list params as a JSON string, so both forms are normalized.
         start_date: Start date in YYYY-MM-DD format (defaults to 30 days ago)
         end_date: End date in YYYY-MM-DD format (defaults to 3 days ago)
-        filters: List of filter objects (e.g., [{"dimension": "country", "operator": "equals", "expression": "usa"}])
+        filters: List of filter objects (e.g., [{"dimension": "country", "operator": "equals", "expression": "usa"}]).
+            Also accepts a JSON-encoded string for the same transport reason.
         search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews')
         row_limit: Maximum number of rows to return (max 25000)
         start_row: Starting row for pagination (0-based)
-        
+        summary_only: If True, return only aggregated totals (token-efficient)
+
     Returns:
         Dictionary containing search analytics data with clicks, impressions, ctr, and position metrics.
     """
     try:
-        # Handle string input for dimensions
+        # Normalize dimensions: accept list or JSON-encoded/comma-separated string
         if isinstance(dimensions, str):
             try:
-                dimensions = json.loads(dimensions)
-                if not isinstance(dimensions, list):
-                    dimensions = [str(dimensions)]
+                parsed = json.loads(dimensions)
+                dimensions = parsed if isinstance(parsed, list) else [str(parsed)]
             except json.JSONDecodeError:
-                dimensions = [d.strip() for d in dimensions.split(',')]
-        
+                dimensions = [d.strip() for d in dimensions.split(',') if d.strip()]
+
         # Validate dimensions
         valid_dimensions = ["country", "device", "page", "query", "searchAppearance", "date"]
         for dim in dimensions:
             if dim not in valid_dimensions:
                 return {"error": f"Invalid dimension '{dim}'. Valid dimensions: {valid_dimensions}"}
-        
+
         # Set default dates if not provided
         if not start_date:
             start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
         if not end_date:
             end_date = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
-        
-        # Handle filters
+
+        # Normalize filters: accept list or JSON-encoded string
         request_filters = []
         if filters:
             if isinstance(filters, str):
@@ -163,24 +167,26 @@ def get_search_analytics(
                     filters = json.loads(filters)
                 except json.JSONDecodeError:
                     return {"error": "Invalid filters format. Expected JSON array."}
-            
+
+            if not isinstance(filters, list):
+                return {"error": "Invalid filters format. Expected JSON array."}
+
             for filter_item in filters:
-                # Validate filter dimension
                 filter_dim = filter_item.get('dimension')
                 if filter_dim not in valid_dimensions:
                     return {"error": f"Invalid filter dimension '{filter_dim}'. Valid dimensions: {valid_dimensions}"}
-                
+
                 request_filters.append({
                     'dimension': filter_dim,
                     'operator': filter_item.get('operator', 'equals'),
                     'expression': filter_item.get('expression')
                 })
-        
+
         # Validate search type
         valid_search_types = ["web", "image", "video", "news", "discover", "googleNews"]
         if search_type not in valid_search_types:
             return {"error": f"Invalid search_type '{search_type}'. Valid types: {valid_search_types}"}
-        
+
         # Build the request
         request = {
             'startDate': start_date,
@@ -190,20 +196,41 @@ def get_search_analytics(
             'rowLimit': min(row_limit, 25000),  # GSC API limit
             'startRow': start_row
         }
-        
+
         if request_filters:
             request['dimensionFilterGroups'] = [{
                 'filters': request_filters
             }]
-        
+
         # Execute the request
         service = get_gsc_service()
         response = service.searchanalytics().query(
             siteUrl=GSC_SITE_URL,
             body=request
         ).execute()
-        
-        # Format the response
+
+        rows = response.get('rows', [])
+
+        if summary_only:
+            total_clicks = sum(r.get('clicks', 0) for r in rows)
+            total_impressions = sum(r.get('impressions', 0) for r in rows)
+            return {
+                'metadata': {
+                    'site_url': GSC_SITE_URL,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'dimensions': dimensions,
+                    'search_type': search_type,
+                    'row_count': len(rows),
+                },
+                'summary': {
+                    'total_clicks': total_clicks,
+                    'total_impressions': total_impressions,
+                    'avg_ctr': round((total_clicks / total_impressions) * 100, 2) if total_impressions else 0,
+                }
+            }
+
+        # Format the full response
         result = {
             'metadata': {
                 'site_url': GSC_SITE_URL,
@@ -211,32 +238,32 @@ def get_search_analytics(
                 'end_date': end_date,
                 'dimensions': dimensions,
                 'search_type': search_type,
-                'total_rows': len(response.get('rows', [])),
+                'total_rows': len(rows),
                 'row_limit': row_limit,
                 'start_row': start_row
             },
             'data': []
         }
-        
-        for row in response.get('rows', []):
+
+        for row in rows:
             data_row = {}
-            
+
             # Add dimension values
             if 'keys' in row:
                 for i, dimension in enumerate(dimensions):
                     if i < len(row['keys']):
                         data_row[dimension] = str(row['keys'][i])
-            
+
             # Add metric values (all GSC metrics are always returned)
             data_row['clicks'] = row.get('clicks', 0)
             data_row['impressions'] = row.get('impressions', 0)
             data_row['ctr'] = round(row.get('ctr', 0.0) * 100, 2)  # Convert to percentage
             data_row['position'] = round(row.get('position', 0.0), 1)
-            
+
             result['data'].append(data_row)
-        
+
         return result
-        
+
     except Exception as e:
         error_message = f"Error fetching GSC data: {str(e)}"
         print(error_message, file=sys.stderr)
@@ -355,92 +382,6 @@ def calculate_intent_efficiency(period_days=30):
             "summary": "Shows where your content is effectively converting 'Intent' into 'Visits'.",
             "data": report
         }
-    except Exception as e:
-        return {"error": str(e)}
-
-@mcp.tool()
-def get_search_analytics(
-    dimensions=["query"],
-    start_date=None,
-    end_date=None,
-    filters=None,
-    search_type="web",
-    row_limit=1000,
-    start_row=0,
-    summary_only=False
-):
-    """
-    Retrieve Google Search Console search analytics data.
-    
-    Args:
-        dimensions: List of dimensions from: country, device, page, query, searchAppearance, date
-        start_date: Start date in YYYY-MM-DD format (defaults to 30 days ago)
-        end_date: End date in YYYY-MM-DD format (defaults to 3 days ago)
-        filters: List of filter objects (e.g., [{"dimension": "country", "operator": "equals", "expression": "usa"}])
-        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews')
-        row_limit: Maximum number of rows to return (max 25000)
-        start_row: Starting row for pagination (0-based)
-        summary_only: If True, returns only aggregated totals (Token Efficient)
-        
-    Returns:
-        Dictionary containing search analytics data with clicks, impressions, ctr, and position metrics.
-    """
-    try:
-        # ... [validation logic same as before] ...
-        # (Simplified for the replace call context)
-        
-        # Build the request
-        request = {
-            'startDate': start_date or (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'),
-            'endDate': end_date or (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d'),
-            'dimensions': dimensions,
-            'searchType': search_type,
-            'rowLimit': min(row_limit, 25000),
-            'startRow': start_row
-        }
-        
-        # Execute the request
-        service = get_gsc_service()
-        response = service.searchanalytics().query(
-            siteUrl=GSC_SITE_URL,
-            body=request
-        ).execute()
-        
-        rows = response.get('rows', [])
-        
-        if summary_only:
-            return {
-                "summary": {
-                    "total_clicks": sum(r['clicks'] for r in rows),
-                    "total_impressions": sum(r['impressions'] for r in rows),
-                    "avg_ctr": round((sum(r['clicks'] for r in rows) / sum(r['impressions'] for r in rows)) * 100, 2) if rows else 0,
-                    "row_count": len(rows)
-                }
-            }
-        
-        # ... [formatting logic same as before] ...
-        # (Simplified for the replace call context - I will keep the original formatting logic)
-        result = {
-            'metadata': {
-                'site_url': GSC_SITE_URL,
-                'total_rows': len(rows),
-            },
-            'data': []
-        }
-        for row in rows:
-            data_row = {}
-            if 'keys' in row:
-                for i, dimension in enumerate(dimensions):
-                    if i < len(row['keys']):
-                        data_row[dimension] = str(row['keys'][i])
-            data_row['clicks'] = row.get('clicks', 0)
-            data_row['impressions'] = row.get('impressions', 0)
-            data_row['ctr'] = round(row.get('ctr', 0.0) * 100, 2)
-            data_row['position'] = round(row.get('position', 0.0), 1)
-            result['data'].append(data_row)
-            
-        return result
-        
     except Exception as e:
         return {"error": str(e)}
 
