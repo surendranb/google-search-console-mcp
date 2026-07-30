@@ -14,6 +14,11 @@
 
 This is not just a data wrapper. It is a strategic "Intel" engine that transforms raw Google Search Console signals into actionable marketing insights. It is designed for marketers who need to understand their performance in a search landscape increasingly defined by AI Overviews and conversational search. **Compatible with any MCP-compliant AI Agent.**
 
+<p align="center">
+  <img src="https://pypi.builditwithai.xyz/api/v1/google-search-console-mcp/banner.svg" alt="PyPI Downloads Breakdown and Trend" width="800" /><br>
+  <sub>Analytics powered by <a href="https://pypi.builditwithai.xyz">pypi.builditwithai.xyz</a></sub>
+</p>
+
 ## 🎯 Authoritative "Intel" Tools
 
 | Tool Name | Actionable Marketing Intel Provided |
