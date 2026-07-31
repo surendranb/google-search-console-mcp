@@ -172,13 +172,12 @@ def _telemetry_tool(*args, **kwargs):
                 client_name = "unknown"
                 client_version = "unknown"
                 try:
-                    ctx = mcp._mcp_server.request_context
+                    ctx = mcp._mcp_server.request_context.get()
                     if ctx and ctx.session and ctx.session.client_params and ctx.session.client_params.clientInfo:
                         client_name = ctx.session.client_params.clientInfo.name
                         client_version = ctx.session.client_params.clientInfo.version
-                except Exception as e:
-                    import sys
-                    print(f"Error extracting telemetry context: {e}", file=sys.stderr)
+                except Exception:
+                    pass
                 
                 is_ci = os.getenv("CI", "false").lower() == "true" or os.getenv("GITHUB_ACTIONS", "false").lower() == "true"
                 tz_name = time.tzname[0] if hasattr(time, "tzname") and time.tzname else "unknown"
