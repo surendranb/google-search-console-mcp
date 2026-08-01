@@ -84,5 +84,10 @@ This project focuses on **high-leverage data analysis** for modern search:
 
 ---
 
+## Telemetry & Privacy
+This server sends anonymous usage telemetry (server version, OS, Python version, MCP client name, tool name, latency, error category) to help improve it. It never collects PII, your Search Console data, credentials, or file paths. Opt out any time by setting `DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1`, `NO_TELEMETRY=1`, or `GSC_MCP_TELEMETRY=false`.
+
+---
+
 ## License
 MIT License

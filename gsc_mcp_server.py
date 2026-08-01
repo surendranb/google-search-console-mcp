@@ -1,19 +1,25 @@
-from fastmcp import FastMCP, Context
+# MCP 2.0 (2026-07-28) — official mcp SDK v2. Ported off the standalone
+# `fastmcp` package: its latest release pins mcp<2.0 and cannot speak the
+# 2026-07-28 spec, and the released decorator monkey-patch registered zero
+# tools on current fastmcp. See gsc_telemetry.py for the telemetry rationale.
+from mcp.server.mcpserver import MCPServer, Context
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 import os
 import sys
 import json
+import time
+import inspect
+import functools
 from pathlib import Path
 from datetime import datetime, timedelta
-import time
-import uuid
-import platform
-import threading
-import functools
-import inspect
-import urllib.request
-import atexit
+
+from gsc_telemetry import (
+    MCP_SERVER_VERSION,
+    send_telemetry,
+    capture_client_info,
+    announce_first_run,
+)
 
 # Configuration from environment variables
 CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -50,79 +56,33 @@ How to work with this server:
 2. INTERPRET with skills: for anything beyond a raw pull, call search_skills first — the skills library has proven field combinations and how to read the result.
 """
 
-# Initialize FastMCP
-mcp = FastMCP("Google Search Console", instructions=GSC_MCP_INSTRUCTIONS)
+# Initialize the MCP 2.0 server. version= is required (v2 stopped defaulting it);
+# instructions passed by keyword (positional would land in `title`).
+mcp = MCPServer(
+    "Google Search Console",
+    version=MCP_SERVER_VERSION if MCP_SERVER_VERSION != "unknown" else "0.0.0",
+    instructions=GSC_MCP_INSTRUCTIONS,
+)
 
-# --- TELEMETRY ---
-POSTHOG_API_KEY = "phc_Aik6H3pf5P9dPBrWLjd6N3wzsVAD6tJnmmEhFwW8Pzsi"
-POSTHOG_HOST = "https://us.i.posthog.com"
+# --- TELEMETRY INSTRUMENTATION ---
+# Every tool is wrapped by @instrument (applied UNDER @mcp.tool()). The wrapper
+# reads the connected client's identity from the per-request `ctx` (dual-era:
+# 2026 stateless _meta or the legacy handshake session — see gsc_telemetry) and
+# fires a `tool_executed` event. functools.wraps preserves the tool signature so
+# MCPServer builds the correct input schema; `ctx` is auto-excluded from it.
+#
+# This replaces the released `mcp.tool = _telemetry_tool` monkey-patch, which
+# registered ZERO tools on current fastmcp / mcp 2.0 (verified empirically).
 
-try:
-    import importlib.metadata
-    MCP_SERVER_VERSION = importlib.metadata.version("google-search-console-mcp")
-except Exception:
-    MCP_SERVER_VERSION = "unknown"
 
-SESSION_ID = str(uuid.uuid4())
-IN_VIRTUAL_ENV = sys.prefix != sys.base_prefix
-CPU_ARCH = platform.machine()
-TIMEZONE_OFFSET = -time.timezone if (time.localtime().tm_isdst == 0) else -time.altzone
-
-def send_telemetry(event: str, properties: dict = None):
-    """
-    Fire-and-forget anonymous telemetry.
-    ponytail: We swallow all exceptions to ensure telemetry never crashes the user's MCP.
-    """
-    if os.getenv("GSC_MCP_TELEMETRY", "true").lower() == "false":
-        return
-
-    def _send():
+def fire_skill_tip(ctx=None, message="", skill=None, trigger="", tool_name=""):
+    """Nudge the model toward skills; logging goes to the client if it opted in
+    (ctx.info still exists in mcp 2.0 but is deprecated/opt-in per the 2026 spec)."""
+    if ctx is not None:
         try:
-            payload = {
-                "api_key": POSTHOG_API_KEY,
-                "event": event,
-                "distinct_id": SESSION_ID,
-                "properties": {
-                    "$os": platform.system(),
-                    "python_version": platform.python_version(),
-                    "mcp_server_version": MCP_SERVER_VERSION,
-                    "mcp_server_name": "google-search-console-mcp",
-                    "cpu_arch": CPU_ARCH,
-                    "in_virtual_env": IN_VIRTUAL_ENV,
-                    "timezone_offset": TIMEZONE_OFFSET,
-                    **(properties or {})
-                }
-            }
-            req = urllib.request.Request(
-                f"{POSTHOG_HOST}/capture/",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"}
-            )
-            urllib.request.urlopen(req, timeout=3)
+            ctx.info(message)
         except Exception:
-            pass  # Silently fail on network issues or timeouts
-
-    th = threading.Thread(target=_send, daemon=True)
-    th.start()
-    _PENDING_SENDS.append(th)
-    if len(_PENDING_SENDS) > 8:
-        _PENDING_SENDS[:] = [t for t in _PENDING_SENDS if t.is_alive()]
-
-_PENDING_SENDS = []
-
-def _drain_pending_sends(deadline_seconds=2.0):
-    end = time.time() + deadline_seconds
-    for th in list(_PENDING_SENDS):
-        remaining = end - time.time()
-        if remaining <= 0: break
-        try: th.join(remaining)
-        except Exception: pass
-
-atexit.register(_drain_pending_sends)
-
-def fire_skill_tip(ctx: Context, message: str, skill: str = None, trigger: str = "", tool_name: str = ""):
-    if ctx:
-        ctx.info(message)
+            pass
     send_telemetry("skill_tip_shown", {
         "tool_name": tool_name,
         "skill_suggested": skill or "generic",
@@ -130,101 +90,92 @@ def fire_skill_tip(ctx: Context, message: str, skill: str = None, trigger: str =
         "ctx_available": ctx is not None,
     })
 
-_original_tool = mcp.tool
 
-def _telemetry_tool(*args, **kwargs):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*w_args, **w_kwargs):
-            start_time = time.time()
-            status = "success"
-            error_category = None
-            rows_returned = 0
-            result = None
+def instrument(func):
+    """Wrap a tool with fire-and-forget telemetry. Signature-preserving."""
+    @functools.wraps(func)
+    def wrapper(*w_args, **w_kwargs):
+        start_time = time.time()
+        status = "success"
+        error_category = None
+        rows_returned = 0
+        result = None
 
-            try:
-                if SERVER_INIT_ERROR:
+        # Capture client identity from ctx (dual-era) as early as possible.
+        ctx = w_kwargs.get("ctx")
+        if ctx is None:
+            for a in w_args:
+                if isinstance(a, Context):
+                    ctx = a
+                    break
+        if ctx is not None:
+            capture_client_info(ctx)
+
+        try:
+            if SERVER_INIT_ERROR:
+                status = "error"
+                error_category = "InitError"
+                return f"Configuration Error: {SERVER_INIT_ERROR}. Please instruct the user to fix their setup."
+
+            result = func(*w_args, **w_kwargs)
+
+            if isinstance(result, dict):
+                if "error" in result:
                     status = "error"
-                    error_category = "InitError"
-                    return f"Configuration Error: {SERVER_INIT_ERROR}. Please instruct the user to fix their setup."
+                    err_str = str(result["error"])
+                    if "PermissionDenied" in err_str or "403" in err_str:
+                        error_category = "IAMError"
+                    else:
+                        error_category = "APIError"
+                elif "metadata" in result:
+                    rows_returned = result.get("metadata", {}).get("total_rows", 0)
 
-                result = func(*w_args, **w_kwargs)
-                
-                if isinstance(result, dict):
-                    if "error" in result:
-                        status = "error"
-                        err_str = str(result["error"])
-                        if "PermissionDenied" in err_str or "403" in err_str:
-                            error_category = "IAMError"
-                        else:
-                            error_category = "APIError"
-                    elif "metadata" in result:
-                        rows_returned = result.get("metadata", {}).get("returned_rows", 0)
-                        
-                return result
-            except Exception as e:
-                status = "exception"
-                error_category = e.__class__.__name__
-                raise
-            finally:
-                latency_ms = int((time.time() - start_time) * 1000)
-                
-                client_name = "unknown"
-                client_version = "unknown"
+            return result
+        except Exception as e:
+            status = "exception"
+            error_category = e.__class__.__name__
+            raise
+        finally:
+            latency_ms = int((time.time() - start_time) * 1000)
+            is_ci = os.getenv("CI", "false").lower() == "true" or os.getenv("GITHUB_ACTIONS", "false").lower() == "true"
+            tz_name = time.tzname[0] if hasattr(time, "tzname") and time.tzname else "unknown"
+
+            props = {
+                "tool_name": func.__name__,
+                "status": status,
+                "latency_ms": latency_ms,
+                "is_ci": is_ci,
+                "timezone": tz_name,
+                "rows_returned": rows_returned,
+            }
+
+            if func.__name__ == "get_search_analytics":
                 try:
-                    ctx = mcp._mcp_server.request_context.get()
-                    if ctx and ctx.session and ctx.session.client_params and ctx.session.client_params.clientInfo:
-                        client_name = ctx.session.client_params.clientInfo.name
-                        client_version = ctx.session.client_params.clientInfo.version
+                    sig = inspect.signature(func)
+                    bound = sig.bind(*w_args, **w_kwargs)
+                    bound.apply_defaults()
+                    args_dict = bound.arguments
+                    props["dimensions_count"] = len(args_dict.get("dimensions") or [])
+                    props["has_filters"] = bool(args_dict.get("filters"))
+                    props["search_type"] = args_dict.get("search_type")
                 except Exception:
                     pass
-                
-                is_ci = os.getenv("CI", "false").lower() == "true" or os.getenv("GITHUB_ACTIONS", "false").lower() == "true"
-                tz_name = time.tzname[0] if hasattr(time, "tzname") and time.tzname else "unknown"
 
-                props = {
-                    "tool_name": func.__name__,
-                    "status": status,
-                    "latency_ms": latency_ms,
-                    "mcp_client_name": client_name,
-                    "mcp_client_version": client_version,
-                    "is_ci": is_ci,
-                    "timezone": tz_name,
-                    "rows_returned": rows_returned
-                }
-                
-                if func.__name__ == "get_search_analytics":
-                    try:
-                        sig = inspect.signature(func)
-                        bound = sig.bind(*w_args, **w_kwargs)
-                        bound.apply_defaults()
-                        args_dict = bound.arguments
-                        
-                        props["dimensions_count"] = len(args_dict.get("dimensions") or [])
-                        props["has_filters"] = bool(args_dict.get("filters"))
-                        props["search_type"] = args_dict.get("search_type")
-                    except Exception as e:
-                        pass
-                        
-                if error_category:
-                    props["error_category"] = error_category
-                    
-                if SERVER_INIT_ERROR:
-                    props["error_message"] = str(SERVER_INIT_ERROR)
-                elif error_category == "exception" or status == "exception":
-                    import sys
-                    _, exc_value, _ = sys.exc_info()
-                    props["error_message"] = str(exc_value) if exc_value else "Unknown Exception"
-                elif isinstance(result, dict) and "error" in result:
-                    props["error_message"] = str(result["error"])
-                    
-                send_telemetry("tool_executed", props)
-                
-        return _original_tool(*args, **kwargs)(wrapper)
-    return decorator
+            if error_category:
+                props["error_category"] = error_category
 
-mcp.tool = _telemetry_tool
-# --- END TELEMETRY ---
+            if SERVER_INIT_ERROR:
+                props["error_message"] = str(SERVER_INIT_ERROR)
+            elif status == "exception":
+                _, exc_value, _ = sys.exc_info()
+                props["error_message"] = str(exc_value) if exc_value else "Unknown Exception"
+            elif isinstance(result, dict) and "error" in result:
+                props["error_message"] = str(result["error"])
+
+            send_telemetry("tool_executed", props)
+
+    return wrapper
+# --- END TELEMETRY INSTRUMENTATION ---
 
 # Initialize Google Search Console API client
 def get_gsc_service():
@@ -259,6 +210,7 @@ def load_gsc_metrics():
         return {}
 
 @mcp.tool()
+@instrument
 def list_gsc_sites():
     """
     List all sites verified in Google Search Console.
@@ -282,6 +234,7 @@ def list_gsc_sites():
         return {"error": f"Error fetching sites: {str(e)}"}
 
 @mcp.tool()
+@instrument
 def list_available_dimensions(ctx: Context = None):
     """
     List all available GSC dimensions with their descriptions.
@@ -303,6 +256,7 @@ def list_available_dimensions(ctx: Context = None):
     return dimensions.get('dimensions', [])
 
 @mcp.tool()
+@instrument
 def list_available_metrics():
     """
     List all available GSC metrics with their descriptions.
@@ -314,6 +268,7 @@ def list_available_metrics():
     return metrics.get('metrics', [])
 
 @mcp.tool()
+@instrument
 def search_skills():
     """
     List available analytical skills (playbooks) for Google Search Console.
@@ -346,6 +301,7 @@ def search_skills():
     return {"skills": available_skills}
 
 @mcp.tool()
+@instrument
 def get_search_analytics(
     dimensions=["query"],
     start_date=None,
@@ -509,6 +465,7 @@ def get_search_analytics(
         return {"error": error_message}
 
 @mcp.tool()
+@instrument
 def get_sitemaps():
     """
     Get all sitemaps for the configured site.
@@ -539,6 +496,7 @@ def get_sitemaps():
         return {"error": f"Error fetching sitemaps: {str(e)}"}
 
 @mcp.tool()
+@instrument
 def submit_sitemap(sitemap_url):
     """
     Submit a sitemap to Google Search Console.
@@ -562,6 +520,7 @@ def submit_sitemap(sitemap_url):
         return {"error": f"Error submitting sitemap: {str(e)}"}
 
 @mcp.tool()
+@instrument
 def delete_sitemap(sitemap_url):
     """
     Delete a sitemap from Google Search Console.
@@ -588,7 +547,9 @@ def main():
     """Main entry point for the MCP server"""
     # Use stdio transport ONLY - this is critical for MCP with Claude
     print("Starting GSC MCP server...", file=sys.stderr)
+    announce_first_run()
     send_telemetry("mcp_started", {"config_status": "error" if SERVER_INIT_ERROR else "success"})
+    # mcp.run() defaults to stdio; pass explicitly for clarity/parity with v1.
     mcp.run(transport="stdio")
 
 # Start the server when run directly
