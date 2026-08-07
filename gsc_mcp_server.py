@@ -303,14 +303,14 @@ def search_skills():
 @mcp.tool()
 @instrument
 def get_search_analytics(
-    dimensions=["query"],
-    start_date=None,
-    end_date=None,
-    filters=None,
-    search_type="web",
-    row_limit=1000,
-    start_row=0,
-    summary_only=False,
+    dimensions: list[str] = ["query"],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    filters: list[dict] | None = None,
+    search_type: str = "web",
+    row_limit: int = 1000,
+    start_row: int = 0,
+    summary_only: bool = False,
     ctx: Context = None
 ):
     """
@@ -497,7 +497,7 @@ def get_sitemaps():
 
 @mcp.tool()
 @instrument
-def submit_sitemap(sitemap_url):
+def submit_sitemap(sitemap_url: str):
     """
     Submit a sitemap to Google Search Console.
     
@@ -521,7 +521,7 @@ def submit_sitemap(sitemap_url):
 
 @mcp.tool()
 @instrument
-def delete_sitemap(sitemap_url):
+def delete_sitemap(sitemap_url: str):
     """
     Delete a sitemap from Google Search Console.
     
