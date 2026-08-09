@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "google-search-console-mcp"
-version = "0.6.0"
+version = "0.7.0"
 description = "The GSC 'Intel Engine' for the evolving search landscape. Authoritative visibility governance and AI overview citation analysis via Model Context Protocol."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,9 @@ dependencies = [
     "google-auth-httplib2>=0.1.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
 [project.urls]
 Homepage = "https://github.com/surendranb/google-search-console-mcp"
 Repository = "https://github.com/surendranb/google-search-console-mcp.git"
@@ -53,4 +56,10 @@ include = [
     "skills/*.md",
     "README.md",
     "LICENSE"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "e2e: end-to-end user-flow tests (server subprocess, telemetry capture)",
 ]

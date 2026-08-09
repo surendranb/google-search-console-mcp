@@ -17,8 +17,8 @@ from datetime import datetime, timedelta
 from gsc_telemetry import (
     MCP_SERVER_VERSION,
     send_telemetry,
-    capture_client_info,
-    announce_first_run,
+    capture_request,
+    mark_boot_events,
 )
 
 # Configuration from environment variables
@@ -53,7 +53,7 @@ Google Search Console Data API access for AI agents — query with schema-accura
 
 How to work with this server:
 1. DISCOVER names before querying: call list_available_dimensions and list_available_metrics to get the exact valid dimensions and metrics in THIS property. Never guess.
-2. INTERPRET with skills: for anything beyond a raw pull, call search_skills first — the skills library has proven field combinations and how to read the result.
+2. INTERPRET with skills: for anything beyond a raw pull, call skills_list first — the skills library has proven field combinations and how to read the result. Fetch the full playbook with skill_read.
 """
 
 # Initialize the MCP 2.0 server. version= is required (v2 stopped defaulting it);
@@ -63,6 +63,19 @@ mcp = MCPServer(
     version=MCP_SERVER_VERSION if MCP_SERVER_VERSION != "unknown" else "0.0.0",
     instructions=GSC_MCP_INSTRUCTIONS,
 )
+
+
+# --- tools_listed from the real protocol tools/list handler ---
+# _handle_list_tools routes through self.list_tools(); shadowing the instance
+# attribute keeps every protocol tools/list (and only that) firing the event.
+async def _list_tools_with_telemetry():
+    tools = await mcp._list_tools_orig()
+    send_telemetry("tools_listed", {"tool_count": len(tools)})
+    return tools
+
+
+mcp._list_tools_orig = mcp.list_tools
+mcp.list_tools = _list_tools_with_telemetry
 
 # --- TELEMETRY INSTRUMENTATION ---
 # Every tool is wrapped by @instrument (applied UNDER @mcp.tool()). The wrapper
@@ -76,13 +89,8 @@ mcp = MCPServer(
 
 
 def fire_skill_tip(ctx=None, message="", skill=None, trigger="", tool_name=""):
-    """Nudge the model toward skills; logging goes to the client if it opted in
-    (ctx.info still exists in mcp 2.0 but is deprecated/opt-in per the 2026 spec)."""
-    if ctx is not None:
-        try:
-            ctx.info(message)
-        except Exception:
-            pass
+    """Nudge the model toward skills (telemetry only; the logging notification
+    is deprecated per SEP-2577)."""
     send_telemetry("skill_tip_shown", {
         "tool_name": tool_name,
         "skill_suggested": skill or "generic",
@@ -101,20 +109,19 @@ def instrument(func):
         rows_returned = 0
         result = None
 
-        # Capture client identity from ctx (dual-era) as early as possible.
+        # Capture per-request protocol props from ctx (stateless _meta).
         ctx = w_kwargs.get("ctx")
         if ctx is None:
             for a in w_args:
                 if isinstance(a, Context):
                     ctx = a
                     break
-        if ctx is not None:
-            capture_client_info(ctx)
+        request_props = capture_request(ctx)
 
         try:
             if SERVER_INIT_ERROR:
                 status = "error"
-                error_category = "InitError"
+                error_category = "InternalError"
                 return f"Configuration Error: {SERVER_INIT_ERROR}. Please instruct the user to fix their setup."
 
             result = func(*w_args, **w_kwargs)
@@ -123,7 +130,9 @@ def instrument(func):
                 if "error" in result:
                     status = "error"
                     err_str = str(result["error"])
-                    if "PermissionDenied" in err_str or "403" in err_str:
+                    if err_str.startswith("Invalid"):
+                        error_category = "ValidationError"
+                    elif "PermissionDenied" in err_str or "403" in err_str:
                         error_category = "IAMError"
                     else:
                         error_category = "APIError"
@@ -147,6 +156,7 @@ def instrument(func):
                 "is_ci": is_ci,
                 "timezone": tz_name,
                 "rows_returned": rows_returned,
+                **request_props,
             }
 
             if func.__name__ == "get_search_analytics":
@@ -158,6 +168,7 @@ def instrument(func):
                     props["dimensions_count"] = len(args_dict.get("dimensions") or [])
                     props["has_filters"] = bool(args_dict.get("filters"))
                     props["search_type"] = args_dict.get("search_type")
+                    props["has_progress_token"] = False
                 except Exception:
                     pass
 
@@ -244,11 +255,11 @@ def list_available_dimensions(ctx: Context = None):
     """
     dimensions = load_gsc_dimensions()
     
-    # NUDGE the model to use search_skills when it discovers schema
+    # NUDGE the model to use skills when it discovers schema
     if ctx:
         fire_skill_tip(
             ctx=ctx,
-            message="PRO TIP: Don't guess which dimensions to combine for strategic analysis. Use `search_skills` to see proven GSC query patterns.",
+            skill="generic",
             trigger="schema_discovery",
             tool_name="list_available_dimensions"
         )
@@ -269,10 +280,10 @@ def list_available_metrics():
 
 @mcp.tool()
 @instrument
-def search_skills():
+def skills_list():
     """
     List available analytical skills (playbooks) for Google Search Console.
-    Use this to learn proven field combinations and how to interpret GSC data for specific SEO tasks.
+    Use this to learn proven field combinations and how to interpret GSC data for specific SEO tasks. Fetch the full playbook with skill_read.
     """
     skills_dir = Path(__file__).parent / "skills"
     if not skills_dir.exists():
@@ -293,7 +304,6 @@ def search_skills():
                 "id": md_file.name,
                 "title": title,
                 "description": desc,
-                "content": content
             })
         except Exception:
             pass
@@ -302,15 +312,46 @@ def search_skills():
 
 @mcp.tool()
 @instrument
+def skill_read(skill_id: str):
+    """
+    Fetch the full content of one analytical skill (playbook) for Google Search Console.
+    
+    Args:
+        skill_id: The skill id from skills_list (e.g., "brand_visibility.md")
+        
+    Returns:
+        The full skill content with title, description, and playbook steps.
+    """
+    skills_dir = Path(__file__).parent / "skills"
+    if not skills_dir.exists():
+        return {"error": "No skills directory found."}
+        
+    skill_file = skills_dir / skill_id
+    if not skill_file.exists() or not skill_file.is_file():
+        return {"error": f"Skill '{skill_id}' not found. Call skills_list to see available skills."}
+        
+    try:
+        content = skill_file.read_text()
+        title = skill_file.stem
+        desc = ""
+        for line in content.splitlines():
+            if line.startswith("title:"): title = line.split(":", 1)[1].strip()
+            if line.startswith("description:"): desc = line.split(":", 1)[1].strip()
+        return {"id": skill_file.name, "title": title, "description": desc, "content": content}
+    except Exception as e:
+        return {"error": f"Error reading skill: {str(e)}"}
+
+@mcp.tool()
+@instrument
 def get_search_analytics(
-    dimensions=["query"],
-    start_date=None,
-    end_date=None,
-    filters=None,
-    search_type="web",
-    row_limit=1000,
-    start_row=0,
-    summary_only=False,
+    dimensions: list[str] = ["query"],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    filters: list[dict] | None = None,
+    search_type: str = "web",
+    row_limit: int = 1000,
+    start_row: int = 0,
+    summary_only: bool = False,
     ctx: Context = None
 ):
     """
@@ -339,7 +380,7 @@ def get_search_analytics(
         if ctx and row_limit > 5000:
             fire_skill_tip(
                 ctx=ctx,
-                message="Pulling >5000 rows. Did you know you can use skills like 'brand_visibility.md' to pre-aggregate data server-side?",
+                skill="brand_visibility",
                 trigger="large_query",
                 tool_name="get_search_analytics"
             )
@@ -352,9 +393,11 @@ def get_search_analytics(
                     dimensions = [str(dimensions)]
             except json.JSONDecodeError:
                 dimensions = [d.strip() for d in dimensions.split(',')]
-        
+
         # Validate dimensions
         valid_dimensions = ["country", "device", "page", "query", "searchAppearance", "date"]
+        if not dimensions:
+            dimensions = ["query"]
         for dim in dimensions:
             if dim not in valid_dimensions:
                 return {"error": f"Invalid dimension '{dim}'. Valid dimensions: {valid_dimensions}"}
@@ -373,7 +416,7 @@ def get_search_analytics(
                     filters = json.loads(filters)
                 except json.JSONDecodeError:
                     return {"error": "Invalid filters format. Expected JSON array."}
-            
+
             for filter_item in filters:
                 # Validate filter dimension
                 filter_dim = filter_item.get('dimension')
@@ -497,7 +540,7 @@ def get_sitemaps():
 
 @mcp.tool()
 @instrument
-def submit_sitemap(sitemap_url):
+def submit_sitemap(sitemap_url: str):
     """
     Submit a sitemap to Google Search Console.
     
@@ -521,7 +564,7 @@ def submit_sitemap(sitemap_url):
 
 @mcp.tool()
 @instrument
-def delete_sitemap(sitemap_url):
+def delete_sitemap(sitemap_url: str):
     """
     Delete a sitemap from Google Search Console.
     
@@ -547,7 +590,7 @@ def main():
     """Main entry point for the MCP server"""
     # Use stdio transport ONLY - this is critical for MCP with Claude
     print("Starting GSC MCP server...", file=sys.stderr)
-    announce_first_run()
+    mark_boot_events()
     send_telemetry("mcp_started", {"config_status": "error" if SERVER_INIT_ERROR else "success"})
     # mcp.run() defaults to stdio; pass explicitly for clarity/parity with v1.
     mcp.run(transport="stdio")
