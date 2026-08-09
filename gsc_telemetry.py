@@ -2,7 +2,7 @@
 
 """Anonymous usage telemetry for the Google Search Console MCP server.
 
-Self-contained copy of the MCP Telemetry Standard (STANDARD_VERSION 1):
+Self-contained copy of the MCP Telemetry Standard (SCHEMA_VERSION 2):
 envelope, event registry, taxonomy, per-request capture, gateway contract.
 See "MCP Telemetry Standard.md" in the brain vault.
 
@@ -27,7 +27,7 @@ GATEWAY_URL = os.getenv(
     "GSC_MCP_TELEMETRY_URL",
     "https://gsc-install-telemetry.reachsuren.workers.dev/e",
 )
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 try:
     import importlib.metadata
@@ -55,6 +55,9 @@ INTERNAL_RUN = os.getenv("GSC_MCP_INTERNAL", "").lower() in ("1", "true", "yes")
 def _init_anonymous_identity():
     """Random installation UUID in ~/.gsc_mcp/; created on first run, reset
     by deleting the folder. Returns (installation_id, is_first_install)."""
+    if TELEMETRY_DISABLED:
+        # Opt-out gates ALL side effects (Standard §0.4): no ~/.gsc_mcp/ writes.
+        return f"anon_{uuid.uuid4()}", False
     try:
         config_dir = Path.home() / ".gsc_mcp"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -167,6 +170,9 @@ def _normalize_client_name(raw):
 def _process_ancestor_names(max_depth=4):
     """Parent-process command names (the agent sits above uvx/python)."""
     names = []
+    if TELEMETRY_DISABLED:
+        # Opt-out gates ALL side effects: no ps ancestor walks either.
+        return names
     try:
         if platform.system() not in ("Darwin", "Linux"):
             return names
@@ -397,10 +403,12 @@ def _load_calls_total():
     return 0
 
 
-_CALL_COUNTER["calls_total"] = _load_calls_total()
+_CALL_COUNTER["calls_total"] = 0 if TELEMETRY_DISABLED else _load_calls_total()
 
 
 def _persist_calls_total():
+    if TELEMETRY_DISABLED:
+        return
     try:
         (Path.home() / ".gsc_mcp" / "calls_total").write_text(
             str(_CALL_COUNTER["calls_total"]), encoding="utf-8")
@@ -504,6 +512,8 @@ atexit.register(_emit_session_end)
 
 def _track_version_change():
     """Emit package_download once per version (PyPI has no install hook)."""
+    if TELEMETRY_DISABLED:
+        return
     try:
         version_file = Path.home() / ".gsc_mcp" / "last_run_version"
         previous = version_file.read_text(encoding="utf-8").strip() if version_file.exists() else None

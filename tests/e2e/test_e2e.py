@@ -24,7 +24,8 @@ pytestmark = pytest.mark.e2e
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Mirror of the gateway worker's KNOWN_EVENTS (Standard §2 allowlist).
+# Events this client emits. (The worker is accept-and-tag, never a gate —
+# this set documents the client's own registry, not an edge allowlist.)
 KNOWN_EVENTS = {
     "mcp_started", "tools_listed", "tool_executed", "session_end",
     "server_first_install", "package_download", "skill_tip_shown", "skill_read",
@@ -87,6 +88,17 @@ def _spawn(env_extra=None):
     env.update(env_extra)
     if "GSC_MCP_TELEMETRY" not in env_extra:
         env.pop("GSC_MCP_TELEMETRY", None)
+    # Offline determinism: with GSC config missing, the instrument wrapper
+    # short-circuits EVERY tool (offline ones included) to a config-error
+    # string. Fake the config so tests never depend on the developer's real
+    # GSC env; offline tools never touch the credentials file.
+    home = env.get("HOME")
+    if home and not env.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        fake_creds = Path(home) / "fake_service_account.json"
+        fake_creds.write_text("{}", encoding="utf-8")
+        env["GOOGLE_APPLICATION_CREDENTIALS"] = str(fake_creds)
+    if not env.get("GSC_SITE_URL"):
+        env["GSC_SITE_URL"] = "https://example.com/"
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "gsc_mcp_server"],
@@ -120,7 +132,8 @@ async def _connect_and_run(params):
             names = [t.name for t in tools.tools]
             dims = await session.call_tool("list_available_dimensions", {})
             skills = await session.call_tool("skills_list", {})
-            return names, _extract_text(dims), _extract_text(skills)
+            skill = await session.call_tool("skill_read", {"skill_id": "brand_visibility.md"})
+            return names, _extract_text(dims), _extract_text(skills), _extract_text(skill)
 
 
 async def test_end_user_tools(tmp_path):
@@ -128,7 +141,7 @@ async def test_end_user_tools(tmp_path):
     capture = CaptureServer()
     try:
         params = _spawn({"HOME": str(tmp_path), "GSC_MCP_TELEMETRY_URL": capture.url})
-        names, dims, skills = await _connect_and_run(params)
+        names, dims, skills, skill = await _connect_and_run(params)
 
         assert "list_gsc_sites" in names
         assert "get_search_analytics" in names
@@ -137,6 +150,7 @@ async def test_end_user_tools(tmp_path):
         assert len(dims) > 0
         assert all("api_name" in d for d in dims)
         assert all("id" in s and "content" not in s for s in skills["skills"])
+        assert skill["id"] == "brand_visibility.md" and skill["content"]
     finally:
         capture.close()
 
@@ -146,13 +160,20 @@ async def test_telemetry_events_flow(tmp_path):
     capture = CaptureServer()
     try:
         params = _spawn({"HOME": str(tmp_path), "GSC_MCP_TELEMETRY_URL": capture.url})
-        names, dims, skills = await _connect_and_run(params)
+        names, dims, skills, skill = await _connect_and_run(params)
         assert "get_search_analytics" in names
 
         assert capture.wait_for_events([
             "server_first_install", "package_download", "mcp_started",
-            "tools_listed", "tool_executed",
+            "tools_listed", "tool_executed", "skill_read",
         ]), f"missing events, saw: {capture.event_names()}"
+
+        skill_events = [p for p in capture.payloads if p["event"] == "skill_read"]
+        assert skill_events, f"skill_read event missing, saw: {capture.event_names()}"
+        for payload in skill_events:
+            props = payload["properties"]
+            assert props["skill_name"] == "brand_visibility.md"
+            assert props["fetch_ok"] is True
 
         tool_events = [p for p in capture.payloads if p["event"] == "tool_executed"]
         assert len(tool_events) >= 2, f"expected tool events, saw: {capture.event_names()}"
@@ -160,6 +181,7 @@ async def test_telemetry_events_flow(tmp_path):
             props = payload["properties"]
             assert props["status"] in ("success", "warning", "error", "exception", "cancelled")
             assert isinstance(props["latency_ms"], int)
+            assert isinstance(props["result_chars"], int) and props["result_chars"] >= 0
             assert "error_category" not in props or props["error_category"] in (
                 "APIError", "ValidationError", "SchemaHallucination", "IAMError",
                 "TimeoutError", "RateLimitError", "NotFoundError", "SourceUnavailable",
@@ -173,7 +195,7 @@ async def test_telemetry_events_flow(tmp_path):
             assert payload["event"] in KNOWN_EVENTS, f"unregistered event: {payload['event']}"
             assert props["mcp_server_name"] == "google-search-console-mcp"
             assert props.get("session_id", "").startswith("sess_")
-            assert props.get("schema_version") == 1
+            assert props.get("schema_version") == 2
             assert "launch_channel" not in props
             assert "has_ever_worked" not in props
             assert payload["distinct_id"].startswith("inst_")
@@ -198,10 +220,13 @@ async def test_telemetry_opt_out(tmp_path):
             "GSC_MCP_TELEMETRY_URL": capture.url,
             "GSC_MCP_TELEMETRY": "false",
         })
-        names, dims, skills = await _connect_and_run(params)
+        names, dims, skills, skill = await _connect_and_run(params)
         assert "get_search_analytics" in names
         time.sleep(3)
         assert capture.payloads == [], f"expected no telemetry, got: {capture.event_names()}"
+        # Opt-out gates ALL side effects (Standard §0.4): no identity file,
+        # no calls_total counter — the config dir must never be created.
+        assert not (tmp_path / ".gsc_mcp").exists(), "opt-out still wrote ~/.gsc_mcp/"
     finally:
         capture.close()
 

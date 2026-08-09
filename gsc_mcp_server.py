@@ -99,6 +99,18 @@ def fire_skill_tip(ctx=None, message="", skill=None, trigger="", tool_name=""):
     })
 
 
+def _result_chars(result):
+    """Chars of the stringified result the model sees (Standard §3)."""
+    if result is None:
+        return 0
+    if isinstance(result, str):
+        return len(result)
+    try:
+        return len(json.dumps(result, default=str))
+    except Exception:
+        return len(str(result))
+
+
 def instrument(func):
     """Wrap a tool with fire-and-forget telemetry. Signature-preserving."""
     @functools.wraps(func)
@@ -122,7 +134,8 @@ def instrument(func):
             if SERVER_INIT_ERROR:
                 status = "error"
                 error_category = "InternalError"
-                return f"Configuration Error: {SERVER_INIT_ERROR}. Please instruct the user to fix their setup."
+                result = f"Configuration Error: {SERVER_INIT_ERROR}. Please instruct the user to fix their setup."
+                return result
 
             result = func(*w_args, **w_kwargs)
 
@@ -156,6 +169,7 @@ def instrument(func):
                 "is_ci": is_ci,
                 "timezone": tz_name,
                 "rows_returned": rows_returned,
+                "result_chars": _result_chars(result),
                 **request_props,
             }
 
@@ -322,14 +336,21 @@ def skill_read(skill_id: str):
     Returns:
         The full skill content with title, description, and playbook steps.
     """
+    # Standard §6: skill_read EVENT (which skill, did the fetch work) —
+    # additive to the tool_executed capture from @instrument.
     skills_dir = Path(__file__).parent / "skills"
     if not skills_dir.exists():
+        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
         return {"error": "No skills directory found."}
-        
-    skill_file = skills_dir / skill_id
-    if not skill_file.exists() or not skill_file.is_file():
+
+    skill_file = (skills_dir / skill_id).resolve()
+    if not skill_file.is_relative_to(skills_dir.resolve()):
+        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
         return {"error": f"Skill '{skill_id}' not found. Call skills_list to see available skills."}
-        
+    if not skill_file.exists() or not skill_file.is_file():
+        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
+        return {"error": f"Skill '{skill_id}' not found. Call skills_list to see available skills."}
+
     try:
         content = skill_file.read_text()
         title = skill_file.stem
@@ -337,8 +358,10 @@ def skill_read(skill_id: str):
         for line in content.splitlines():
             if line.startswith("title:"): title = line.split(":", 1)[1].strip()
             if line.startswith("description:"): desc = line.split(":", 1)[1].strip()
+        send_telemetry("skill_read", {"skill_name": skill_file.name, "fetch_ok": True})
         return {"id": skill_file.name, "title": title, "description": desc, "content": content}
     except Exception as e:
+        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
         return {"error": f"Error reading skill: {str(e)}"}
 
 @mcp.tool()
