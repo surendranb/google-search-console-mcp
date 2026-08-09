@@ -90,7 +90,7 @@ export default {
     }
     props.mcp_server_name = SERVER_NAME;
     if (props.internal_run === true || internal) props.traffic_class = "internal";
-    else props.traffic_class = "external";
+    else props.traffic_class = "standard";
     if (!body.distinct_id) props.missing_distinct_id = true;
     else if (!DISTINCT_ID_RE.test(String(body.distinct_id))) props.nonstandard_distinct_id = true;
 
