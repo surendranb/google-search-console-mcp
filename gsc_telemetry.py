@@ -2,17 +2,16 @@
 
 """Anonymous usage telemetry for the Google Search Console MCP server.
 
-Dual-era identity capture (MCP 2.0 stateless _meta + legacy handshake), opt-out
-honored, no PII / no GSC data / no paths, product UA. Transport: direct to
-PostHog (the released v0.5.0 contract, shared project keyed by mcp_server_name).
+Self-contained copy of the MCP Telemetry Standard (STANDARD_VERSION 1):
+envelope, event registry, taxonomy, per-request capture, gateway contract.
+See "MCP Telemetry Standard.md" in the brain vault.
 
-There is currently NO dedicated gsc.builditwithai.xyz gateway (only the GA4
-worker exists), so we keep the released direct-to-PostHog POST rather than guess
-a host. To move behind a gateway later, point _POST_URL at the gateway's /e
-endpoint and drop the api_key from the payload — see the seam below.
+Transport: Cloudflare gateway worker (workers/install-telemetry/) which
+strips IPs and injects the PostHog key server-side.
 """
 
 import os
+import re
 import sys
 import time
 import json
@@ -20,18 +19,14 @@ import uuid
 import atexit
 import platform
 import threading
+import subprocess
 import urllib.request
+from pathlib import Path
 
-# --- Transport seam -------------------------------------------------------
-# Released v0.5.0 posts straight to PostHog. If/when a gsc gateway exists,
-# set _POST_URL = "https://<host>/e" and _USE_GATEWAY = True (the gateway
-# injects the key server-side, so the payload drops api_key).
-POSTHOG_API_KEY = "phc_Aik6H3pf5P9dPBrWLjd6N3wzsVAD6tJnmmEhFwW8Pzsi"
-POSTHOG_HOST = "https://us.i.posthog.com"
-_POST_URL = f"{POSTHOG_HOST}/capture/"
-_USE_GATEWAY = False
-# --------------------------------------------------------------------------
-
+GATEWAY_URL = os.getenv(
+    "GSC_MCP_TELEMETRY_URL",
+    "https://gsc-install-telemetry.reachsuren.workers.dev/e",
+)
 SCHEMA_VERSION = 1
 
 try:
@@ -41,9 +36,8 @@ except Exception:
     MCP_SERVER_VERSION = "unknown"
 
 
+# Any disable flag wins over GSC_MCP_TELEMETRY=true.
 def _telemetry_disabled() -> bool:
-    """Any disable flag wins. Keeps the released GSC_MCP_TELEMETRY=false and
-    adds the standard opt-out set (DISABLE_TELEMETRY / DO_NOT_TRACK / NO_TELEMETRY)."""
     if os.getenv("GSC_MCP_TELEMETRY", "true").lower() in ("false", "0", "off"):
         return True
     for var in ("DISABLE_TELEMETRY", "DO_NOT_TRACK", "NO_TELEMETRY"):
@@ -54,17 +48,252 @@ def _telemetry_disabled() -> bool:
 
 TELEMETRY_DISABLED = _telemetry_disabled()
 
-SESSION_ID = str(uuid.uuid4())
+# Set only by our own CI/dev runs, to tag them traffic_class=internal.
+INTERNAL_RUN = os.getenv("GSC_MCP_INTERNAL", "").lower() in ("1", "true", "yes")
+
+
+def _init_anonymous_identity():
+    """Random installation UUID in ~/.gsc_mcp/; created on first run, reset
+    by deleting the folder. Returns (installation_id, is_first_install)."""
+    try:
+        config_dir = Path.home() / ".gsc_mcp"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        id_file = config_dir / "installation_id"
+        if id_file.exists():
+            installation_id = id_file.read_text(encoding="utf-8").strip()
+            is_first_install = False
+        else:
+            installation_id = f"inst_{uuid.uuid4()}"
+            id_file.write_text(installation_id, encoding="utf-8")
+            is_first_install = True
+
+        return installation_id, is_first_install
+    except Exception:
+        # filesystem not writable: fall back to a non-persistent id
+        return f"anon_{uuid.uuid4()}", False
+
+
+INSTALLATION_ID, IS_FIRST_INSTALL = _init_anonymous_identity()
+SESSION_ID = f"sess_{uuid.uuid4()}"  # one per process
+
 IN_VIRTUAL_ENV = sys.prefix != sys.base_prefix
 CPU_ARCH = platform.machine()
 TIMEZONE_OFFSET = -time.timezone if (time.localtime().tm_isdst == 0) else -time.altzone
 
 
-# Handshake / _meta clientInfo, captured on the first tool call that carries a
-# ctx (the handshake is post-boot; identity is not known at server start).
-_RUNTIME_CLIENT = {
-    "name": None, "version": None, "protocol_version": None, "caps": None,
+# GSC_MCP_SOURCE, set in install snippets; raw value + low-cardinality bucket.
+_KNOWN_SOURCES = {
+    "readme", "glama", "mcpso", "pulsemcp", "gscmcp", "setup",
+    "cursor_button", "vscode_button", "installer",
 }
+
+
+def _install_source():
+    raw = (os.getenv("GSC_MCP_SOURCE") or "").strip().lower()
+    if not raw:
+        # curl|bash installer writes ~/.gsc_mcp/source (env can't survive
+        # agent launches); fall back to it so server events carry the bucket.
+        try:
+            source_file = Path.home() / ".gsc_mcp" / "source"
+            if source_file.exists():
+                raw = source_file.read_text(encoding="utf-8").strip().lower()
+        except Exception:
+            pass
+    if not raw:
+        return None, None
+    return raw, (raw if raw in _KNOWN_SOURCES else "other")
+
+
+INSTALL_SOURCE_RAW, INSTALL_SOURCE = _install_source()
+
+
+# Redaction applied to every outgoing string.
+_REDACTIONS = [
+    (re.compile(r"\bhttps?://\S+"), "<url>"),
+    (re.compile(r"(?:file://)?[A-Za-z]:[\\/](?:[^\\/:*?\"<>|\r\n]+[\\/])+[^\\/:*?\"<>|\r\n ]*"), "<path>"),
+    (re.compile(r"(?:file://)?/(?:[\w.@()~+-]+/)+[\w.@()~+-]*"), "<path>"),
+    (re.compile(r"(?:[\w.@()~+-]+/){2,}[\w.@()~+-]+"), "<path>"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "<email>"),
+]
+
+
+def _scrub(value):
+    if isinstance(value, str):
+        s = value
+        for pattern, replacement in _REDACTIONS:
+            s = pattern.sub(replacement, s)
+        return s
+    if isinstance(value, dict):
+        return {k: _scrub(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub(v) for v in value]
+    return value
+
+
+# Map a protocol clientInfo.name to a known bucket.
+def _normalize_client_name(raw):
+    n = (raw or "").strip().lower()
+    if not n or n == "unknown":
+        return None
+    buckets = [
+        ("local-agent-mode", "claude_cowork"),
+        ("claude-code", "claude_code"),
+        ("claude_code", "claude_code"),
+        ("claude code", "claude_code"),
+        ("claudeai", "claude_desktop"),
+        ("claude-ai", "claude_desktop"),
+        ("claude desktop", "claude_desktop"),
+        ("cursor", "cursor"),
+        ("codex", "codex"),
+        ("gemini", "gemini_cli"),
+        ("windsurf", "windsurf"),
+        ("opencode", "opencode"),
+        ("kiro", "kiro"),
+        ("antigravity", "antigravity"),
+        ("copilot", "github_copilot"),
+        ("cline", "cline"),
+        ("zed", "zed"),
+        ("visual studio code", "vscode"),
+        ("vscode", "vscode"),
+        ("inspector", "mcp_inspector"),
+    ]
+    for needle, bucket in buckets:
+        if needle in n:
+            return bucket
+    return "other"
+
+
+def _process_ancestor_names(max_depth=4):
+    """Parent-process command names (the agent sits above uvx/python)."""
+    names = []
+    try:
+        if platform.system() not in ("Darwin", "Linux"):
+            return names
+        pid = os.getppid()
+        for _ in range(max_depth):
+            try:
+                pid_val = int(pid) if pid else 0
+            except (ValueError, TypeError):
+                break
+            if not pid_val or pid_val <= 1:
+                break
+            out = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "ppid=,comm="], text=True, timeout=1
+            ).strip()
+            if not out:
+                break
+            parts = out.split(None, 1)
+            names.append(parts[1].lower() if len(parts) > 1 else "")
+            pid = int(parts[0])
+    except Exception:
+        pass
+    return names
+
+
+def _detect_run_context() -> str:
+    env = os.environ
+    if env.get("GITHUB_ACTIONS", "").lower() == "true" or env.get("CI", "").lower() in ("true", "1"):
+        return "ci"
+    if ("KUBERNETES_SERVICE_HOST" in env or "AWS_EXECUTION_ENV" in env
+            or "ECS_CONTAINER_METADATA_URI" in env or "ECS_CONTAINER_METADATA_URI_V4" in env
+            or os.path.exists("/.dockerenv")):
+        return "cloud"
+    if "TERM_PROGRAM" in env or "SSH_TTY" in env or "SSH_CONNECTION" in env or sys.stdin.isatty():
+        return "terminal"
+    if env.get("__CFBundleIdentifier"):
+        return "desktop"
+    if "DISPLAY" in env or "WAYLAND_DISPLAY" in env or env.get("XDG_SESSION_TYPE") in ("x11", "wayland"):
+        return "desktop"
+    if platform.system() == "Windows" and env.get("SESSIONNAME", "").lower() == "console":
+        return "desktop"
+    return "headless"
+
+
+RUN_CONTEXT = _detect_run_context()
+
+
+def _detect_agent_name() -> str:
+    """Best-effort agent from env-var presence, bundle id, and parent
+    processes; used before the protocol clientInfo is available."""
+    env = os.environ
+    if "CLAUDECODE" in env or "CLAUDE_CODE" in env or any(k.startswith("CLAUDE_CODE_") for k in env):
+        return "claude_code"
+    if any(k in env for k in ("CURSOR_TRACE_ID", "CURSOR_TRACE", "CURSOR_VERSION", "CURSOR_SESSION_ID")):
+        return "cursor"
+    if "GEMINI_CLI" in env or "GEMINI_EXTENSION" in env:
+        return "gemini_cli"
+    if "WINDSURF_VERSION" in env or any(k.startswith("CODEIUM_") for k in env):
+        return "windsurf"
+    if "ANTIGRAVITY" in env or "AGY_SESSION" in env:
+        return "antigravity"
+
+    bundle = env.get("__CFBundleIdentifier", "").lower()
+    if "claudefordesktop" in bundle or "claude-desktop" in bundle:
+        return "claude_desktop"
+    if "cursor" in bundle:
+        return "cursor"
+    if "windsurf" in bundle:
+        return "windsurf"
+
+    for comm in _process_ancestor_names():
+        for needle, bucket in (
+            ("claude", "claude_code"),
+            ("cursor", "cursor"),
+            ("gemini", "gemini_cli"),
+            ("windsurf", "windsurf"),
+            ("codex", "codex"),
+        ):
+            if needle in comm:
+                return bucket
+
+    if "VSCODE_PID" in env or "VSCODE_IPC_HOOK" in env or "VSCODE_CWD" in env:
+        return "vscode"
+    if env.get("GITHUB_ACTIONS", "").lower() == "true" or env.get("CI", "").lower() in ("true", "1"):
+        return "ci_runner"
+
+    return "generic_agent" if not sys.stdin.isatty() else "human_terminal"
+
+
+AGENT_NAME = _detect_agent_name()
+
+
+def _detect_discovery_channel() -> str:
+    argv_str = " ".join(sys.argv).lower()
+    if "uvx" in argv_str or "uv" in sys.executable:
+        return "uvx"
+    if "brew" in sys.executable or "homebrew" in sys.executable:
+        return "homebrew"
+    if IN_VIRTUAL_ENV:
+        return "pip_venv"
+    return "direct_python"
+
+
+DISCOVERY_CHANNEL = _detect_discovery_channel()
+
+
+def _raw_env_signals() -> dict:
+    env = os.environ
+    return {
+        "term_program": env.get("TERM_PROGRAM"),
+        "stdin_tty": sys.stdin.isatty(),
+        "has_ssh": ("SSH_TTY" in env or "SSH_CONNECTION" in env),
+        "cfbundle_id": env.get("__CFBundleIdentifier"),
+        "has_display": ("DISPLAY" in env or "WAYLAND_DISPLAY" in env),
+        "container": (os.path.exists("/.dockerenv") or "KUBERNETES_SERVICE_HOST" in env
+                      or "AWS_EXECUTION_ENV" in env or "ECS_CONTAINER_METADATA_URI" in env),
+        "ci": (env.get("CI", "").lower() in ("true", "1") or env.get("GITHUB_ACTIONS", "").lower() == "true"),
+        "has_claudecode": ("CLAUDECODE" in env or "CLAUDE_CODE" in env or any(k.startswith("CLAUDE_CODE_") for k in env)),
+        "has_cursor": any(k in env for k in ("CURSOR_TRACE_ID", "CURSOR_TRACE", "CURSOR_VERSION", "CURSOR_SESSION_ID")),
+        "has_gemini": ("GEMINI_CLI" in env or "GEMINI_EXTENSION" in env),
+        "has_windsurf": ("WINDSURF_VERSION" in env or any(k.startswith("CODEIUM_") for k in env)),
+        "has_antigravity": ("ANTIGRAVITY" in env or "AGY_SESSION" in env),
+        "has_vscode": ("VSCODE_PID" in env or "VSCODE_IPC_HOOK" in env or "VSCODE_CWD" in env),
+        "parent_procs": _process_ancestor_names(),
+    }
+
+
+ENV_SIGNALS = _raw_env_signals()
 
 
 def _meta_as_dict(meta):
@@ -83,72 +312,104 @@ def _meta_as_dict(meta):
         return {}
 
 
-def capture_client_info(ctx):
-    """Populate _RUNTIME_CLIENT once, from whichever era the client speaks.
-
-    MCP 2.0 (2026-07-28) is stateless: identity rides in per-request _meta and
-    there is no initialize handshake. Older clients (today's fleet) still do the
-    handshake, so identity lives on ctx.session.client_params. Idempotent."""
-    if _RUNTIME_CLIENT["name"] is not None or ctx is None:
-        return
+def _trace_ids(traceparent):
+    """Parse a SEP-414 traceparent into (trace_id, span_id)."""
     try:
-        info = None
-        caps_raw = None
-        proto = getattr(ctx, "protocol_version", None)
+        parts = str(traceparent).split("-")
+        if len(parts) >= 4:
+            return parts[1], parts[2]
+    except Exception:
+        pass
+    return None, None
 
-        # 2026-07-28 stateless: identity in per-request _meta.
+
+def capture_request(ctx):
+    """Per-request protocol capture (MCP 2.x stateless _meta). Returns a props
+    dict; NEVER stores handshake state. Protocol client > machine detection."""
+    props = {}
+    if ctx is None:
+        return props
+    try:
         req_ctx = getattr(ctx, "request_context", None)
         meta = _meta_as_dict(getattr(req_ctx, "meta", None) if req_ctx else None)
+
+        info = meta.get("io.modelcontextprotocol/clientInfo") if meta else None
+        if isinstance(info, dict) and info.get("name"):
+            props["mcp_client_name"] = str(info["name"])
+            props["agent_name"] = _normalize_client_name(info.get("name")) or AGENT_NAME
+            if info.get("version"):
+                props["mcp_client_version"] = str(info["version"])
+            if info.get("title"):
+                props["mcp_client_title"] = str(info["title"])
+            if info.get("description"):
+                props["mcp_client_description"] = str(info["description"])
+
+        proto = meta.get("io.modelcontextprotocol/protocolVersion") if meta else None
+        if not proto:
+            proto = getattr(ctx, "protocol_version", None)
+        if proto:
+            props["mcp_protocol_version"] = str(proto)
+
+        caps = None
         if meta:
-            mci = meta.get("io.modelcontextprotocol/clientInfo")
-            if isinstance(mci, dict) and mci.get("name"):
-                info = mci
-                caps_raw = (meta.get("io.modelcontextprotocol/clientCapabilities")
-                            or meta.get("io.modelcontextprotocol/capabilities"))
-                proto = proto or meta.get("io.modelcontextprotocol/protocolVersion")
+            caps = (meta.get("io.modelcontextprotocol/clientCapabilities")
+                    or meta.get("io.modelcontextprotocol/capabilities"))
+        if not caps and getattr(ctx, "client_capabilities", None) is not None:
+            try:
+                caps = ctx.client_capabilities.model_dump(mode="json", exclude_none=True)
+            except Exception:
+                caps = None
+        if isinstance(caps, dict):
+            props["client_supports_sampling"] = "sampling" in caps
+            props["client_supports_roots"] = "roots" in caps
+            props["client_supports_elicitation"] = "elicitation" in caps
+            props["client_has_experimental_caps"] = bool(caps.get("experimental"))
 
-        # Legacy handshake on the session. MCP 2.0 official SDK exposes
-        # client_info (snake) while mcp 1.x / fastmcp uses clientInfo (camel);
-        # try snake first, fall back to camel.
-        if info is None:
-            sess = getattr(ctx, "session", None)
-            params = getattr(sess, "client_params", None) if sess else None
-            ci = None
-            if params is not None:
-                ci = getattr(params, "client_info", None) or getattr(params, "clientInfo", None)
-            if ci is not None and getattr(ci, "name", None):
-                info = {"name": ci.name, "version": getattr(ci, "version", None)}
-                proto = (proto or getattr(params, "protocol_version", None)
-                         or getattr(params, "protocolVersion", None))
-                caps_obj = getattr(params, "capabilities", None)
-                if caps_obj is not None:
-                    try:
-                        caps_raw = caps_obj.model_dump(mode="json", exclude_none=True)
-                    except Exception:
-                        caps_raw = None
+        traceparent = meta.get("traceparent") if meta else None
+        if traceparent:
+            props["traceparent"] = str(traceparent)
+            trace_id, span_id = _trace_ids(traceparent)
+            if trace_id:
+                props["trace_id"] = trace_id
+            if span_id:
+                props["span_id"] = span_id
 
-        if not info or not info.get("name"):
-            # Fall back to client_capabilities on the ctx if present (mcp 2.0).
-            caps_obj = getattr(ctx, "client_capabilities", None)
-            if caps_obj is not None:
-                try:
-                    caps_raw = caps_obj.model_dump(mode="json", exclude_none=True)
-                    _RUNTIME_CLIENT["caps"] = caps_raw
-                except Exception:
-                    pass
-            if proto and not _RUNTIME_CLIENT["protocol_version"]:
-                _RUNTIME_CLIENT["protocol_version"] = str(proto)
-            return
+        request_id = getattr(ctx, "request_id", None)
+        if request_id:
+            props["mcp_request_id"] = str(request_id)
+    except Exception:
+        pass
+    return props
 
-        _RUNTIME_CLIENT["name"] = str(info.get("name"))
-        _RUNTIME_CLIENT["version"] = str(info.get("version")) if info.get("version") else None
-        _RUNTIME_CLIENT["protocol_version"] = str(proto) if proto else None
-        if isinstance(caps_raw, dict):
-            _RUNTIME_CLIENT["caps"] = caps_raw
+
+# Session counters (NOT handshake state — allowed per Standard §4).
+_SESSION_START = time.time()
+_CALL_COUNTER = {"tool_sequence": 0, "calls_total": 0}
+
+
+def _load_calls_total():
+    try:
+        f = Path.home() / ".gsc_mcp" / "calls_total"
+        if f.exists():
+            return int(f.read_text(encoding="utf-8").strip() or "0")
+    except Exception:
+        pass
+    return 0
+
+
+_CALL_COUNTER["calls_total"] = _load_calls_total()
+
+
+def _persist_calls_total():
+    try:
+        (Path.home() / ".gsc_mcp" / "calls_total").write_text(
+            str(_CALL_COUNTER["calls_total"]), encoding="utf-8")
     except Exception:
         pass
 
 
+# In-flight sender threads, drained briefly at exit — short-lived sessions
+# (a large share of real boots) otherwise lose their events to process death.
 _PENDING_SENDS = []
 
 
@@ -164,12 +425,9 @@ def _drain_pending_sends(deadline_seconds=2.0):
             pass
 
 
-atexit.register(_drain_pending_sends)
-
-
 def send_telemetry(event: str, properties: dict = None):
-    """Fire-and-forget anonymous telemetry on a daemon thread (joined briefly at
-    exit). No-op when opted out; never raises."""
+    """Fire-and-forget event to the gateway on a daemon thread (joined briefly
+    at exit). No-op when opted out; never raises."""
     if TELEMETRY_DISABLED:
         return
 
@@ -184,30 +442,36 @@ def send_telemetry(event: str, properties: dict = None):
                 "cpu_arch": CPU_ARCH,
                 "in_virtual_env": IN_VIRTUAL_ENV,
                 "timezone_offset": TIMEZONE_OFFSET,
+                "agent_name": AGENT_NAME,
+                "run_context": RUN_CONTEXT,
+                "discovery_channel": DISCOVERY_CHANNEL,
+                "raw_env": ENV_SIGNALS,
                 "session_id": SESSION_ID,
                 **(properties or {}),
             }
-            if _RUNTIME_CLIENT["name"]:
-                props.setdefault("mcp_client_name", _RUNTIME_CLIENT["name"])
-                props.setdefault("mcp_client_version", _RUNTIME_CLIENT["version"])
-            if _RUNTIME_CLIENT["protocol_version"]:
-                props.setdefault("mcp_protocol_version", _RUNTIME_CLIENT["protocol_version"])
-            if _RUNTIME_CLIENT["caps"] is not None:
-                props.setdefault("client_capabilities", _RUNTIME_CLIENT["caps"])
+            if INTERNAL_RUN:
+                props["internal_run"] = True
+            if INSTALL_SOURCE:
+                props.setdefault("install_source", INSTALL_SOURCE)
+                props.setdefault("install_source_raw", INSTALL_SOURCE_RAW)
+            if event == "tool_executed":
+                _CALL_COUNTER["tool_sequence"] += 1
+                _CALL_COUNTER["calls_total"] += 1
+                props.setdefault("tool_sequence", _CALL_COUNTER["tool_sequence"])
+                props.setdefault("calls_total", _CALL_COUNTER["calls_total"])
+            props = _scrub(props)
             props["$process_person_profile"] = False  # no person profiles
-
-            if _USE_GATEWAY:
-                payload = {"event": event, "distinct_id": SESSION_ID, "properties": props}
-            else:
-                payload = {"api_key": POSTHOG_API_KEY, "event": event,
-                           "distinct_id": SESSION_ID, "properties": props}
-
+            payload = {
+                "event": event,
+                "distinct_id": INSTALLATION_ID,
+                "properties": props,
+            }
             req = urllib.request.Request(
-                _POST_URL,
+                GATEWAY_URL,
                 data=json.dumps(payload).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",
-                    # Product UA: gateway 403s default library UAs. Harmless direct.
+                    # Product UA: default library UAs are rejected at the edge
                     "User-Agent": f"google-search-console-mcp/{MCP_SERVER_VERSION}",
                 },
             )
@@ -222,24 +486,49 @@ def send_telemetry(event: str, properties: dict = None):
         _PENDING_SENDS[:] = [t for t in _PENDING_SENDS if t.is_alive()]
 
 
-def announce_first_run():
-    """One-time stderr disclosure of anonymous telemetry + opt-out, matching the
-    GA4 sibling's privacy posture. Best-effort marker in ~/.gsc_mcp/."""
+def _emit_session_end():
     if TELEMETRY_DISABLED:
         return
+    send_telemetry("session_end", {
+        "session_duration_s": int(time.time() - _SESSION_START),
+        "tool_sequence": _CALL_COUNTER["tool_sequence"],
+        "calls_total": _CALL_COUNTER["calls_total"],
+    })
+    _persist_calls_total()
+
+
+# atexit is LIFO: session_end must fire before the drain joins senders.
+atexit.register(_drain_pending_sends)
+atexit.register(_emit_session_end)
+
+
+def _track_version_change():
+    """Emit package_download once per version (PyPI has no install hook)."""
     try:
-        from pathlib import Path
-        d = Path.home() / ".gsc_mcp"
-        d.mkdir(parents=True, exist_ok=True)
-        marker = d / "announced_v1"
-        if marker.exists():
+        version_file = Path.home() / ".gsc_mcp" / "last_run_version"
+        previous = version_file.read_text(encoding="utf-8").strip() if version_file.exists() else None
+        if previous == MCP_SERVER_VERSION:
             return
-        print(
-            "google-search-console-mcp collects anonymous usage telemetry (no PII, "
-            "no GSC data, no paths). Opt out any time with DISABLE_TELEMETRY=1 or "
-            "DO_NOT_TRACK=1 or GSC_MCP_TELEMETRY=false.",
-            file=sys.stderr,
-        )
-        marker.write_text("1", encoding="utf-8")
+        send_telemetry("package_download", {
+            "version": MCP_SERVER_VERSION,
+            "previous_version": previous,
+            "first_download": previous is None,
+        })
+        version_file.write_text(MCP_SERVER_VERSION, encoding="utf-8")
     except Exception:
         pass
+
+
+def mark_boot_events():
+    """First-run disclosure BEFORE the first event, then install/version events."""
+    if TELEMETRY_DISABLED:
+        return
+    if IS_FIRST_INSTALL:
+        print(
+            "google-search-console-mcp collects anonymous usage telemetry (no PII, "
+            "no GSC data, no paths — see 'Telemetry & Privacy' in the README). "
+            "Opt out any time with GSC_MCP_TELEMETRY=false or DO_NOT_TRACK=1.",
+            file=sys.stderr,
+        )
+        send_telemetry("server_first_install", {"first_install_version": MCP_SERVER_VERSION})
+    _track_version_change()
