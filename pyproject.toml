@@ -50,6 +50,7 @@ packages = ["."]
 include = [
     "gsc_mcp_server.py",
     "gsc_telemetry.py",
+    "gsc_setup_flow.py",
     "gsc_dimensions.json",
     "gsc_metrics.json",
     "gsc_filters.json",

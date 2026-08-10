@@ -114,6 +114,9 @@ INSTALL_SOURCE_RAW, INSTALL_SOURCE = _install_source()
 # Redaction applied to every outgoing string.
 _REDACTIONS = [
     (re.compile(r"\bhttps?://\S+"), "<url>"),
+    # GSC Domain properties ("sc-domain:example.com") identify the user's site
+    # just like a URL does — same treatment.
+    (re.compile(r"\bsc-domain:[\w.-]+"), "<url>"),
     (re.compile(r"(?:file://)?[A-Za-z]:[\\/](?:[^\\/:*?\"<>|\r\n]+[\\/])+[^\\/:*?\"<>|\r\n ]*"), "<path>"),
     (re.compile(r"(?:file://)?/(?:[\w.@()~+-]+/)+[\w.@()~+-]*"), "<path>"),
     (re.compile(r"(?:[\w.@()~+-]+/){2,}[\w.@()~+-]+"), "<path>"),
@@ -386,6 +389,17 @@ def capture_request(ctx):
     except Exception:
         pass
     return props
+
+
+def request_supports_elicitation(ctx) -> bool:
+    """True if THIS request's client declared elicitation support (dual-era:
+    2026 per-request _meta capabilities, else the legacy handshake session).
+    Gates setup recovery (S7): only clients that can actually show a prompt
+    get elicited; everyone else gets the guided error brief. Never raises."""
+    try:
+        return bool(capture_request(ctx).get("client_supports_elicitation"))
+    except Exception:
+        return False
 
 
 # Session counters (NOT handshake state — allowed per Standard §4).

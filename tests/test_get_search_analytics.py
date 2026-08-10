@@ -6,6 +6,7 @@ for both list and JSON-string inputs (regression test for the v0.3.0
 duplicate-registration bug).
 """
 
+import asyncio
 import os
 import sys
 import types
@@ -105,7 +106,7 @@ class GetSearchAnalyticsRequestBodyTests(unittest.TestCase):
         gsc_mcp_server.get_gsc_service = self._orig
 
     def test_dimensions_as_list_is_passed_through(self):
-        result = gsc_mcp_server.get_search_analytics(dimensions=["page"])
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(dimensions=["page"]))
         self.assertNotIn("error", result, msg=result)
         self.assertEqual(self.captured_body["dimensions"], ["page"])
         self.assertIsInstance(self.captured_body["dimensions"], list)
@@ -113,7 +114,7 @@ class GetSearchAnalyticsRequestBodyTests(unittest.TestCase):
 
 
     def test_invalid_dimension_returns_error_without_calling_api(self):
-        result = gsc_mcp_server.get_search_analytics(dimensions=["bogus"])
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(dimensions=["bogus"]))
         self.assertIn("error", result)
         self.assertEqual(self.captured_body, {})
 
@@ -131,9 +132,9 @@ class GetSearchAnalyticsRequestBodyTests(unittest.TestCase):
             return service
 
         gsc_mcp_server.get_gsc_service = fake_get_gsc_service
-        result = gsc_mcp_server.get_search_analytics(
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
             dimensions=["page"], summary_only=True
-        )
+        ))
         self.assertIn("summary", result)
         self.assertEqual(result["summary"]["total_clicks"], 15)
         self.assertEqual(result["summary"]["total_impressions"], 150)
