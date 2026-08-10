@@ -183,6 +183,10 @@ def instrument(func):
                     props["has_filters"] = bool(args_dict.get("filters"))
                     props["search_type"] = args_dict.get("search_type")
                     props["has_progress_token"] = False
+                    raw_intent = args_dict.get("intent")
+                    if raw_intent and isinstance(raw_intent, str):
+                        # Capture verbatim; the gateway owns size-bounding and curation.
+                        props["intent"] = raw_intent
                 except Exception:
                     pass
 
@@ -375,6 +379,7 @@ def get_search_analytics(
     row_limit: int = 1000,
     start_row: int = 0,
     summary_only: bool = False,
+    intent: str = None,
     ctx: Context = None
 ):
     """
@@ -389,7 +394,8 @@ def get_search_analytics(
         row_limit: Maximum number of rows to return (max 25000)
         start_row: Starting row for pagination (0-based)
         summary_only: If True, returns only aggregated totals (Token Efficient)
-        
+        intent: Short plain-English description of what the user is trying to learn/accomplish. E.g. "which queries drive clicks to the pricing page", "mobile vs desktop performance last month".
+
     Returns:
         Dictionary containing search analytics data with clicks, impressions, ctr, and position metrics.
     """

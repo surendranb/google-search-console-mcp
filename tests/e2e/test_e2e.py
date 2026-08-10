@@ -32,6 +32,10 @@ KNOWN_EVENTS = {
 }
 OPT_OUT_VARS = ("GSC_MCP_TELEMETRY", "DISABLE_TELEMETRY", "DO_NOT_TRACK", "NO_TELEMETRY")
 
+# Verbatim intent string asserted end-to-end (capture-then-curate: the client
+# sends it as-is; the gateway/query layer owns curation).
+INTENT_TEXT = "which queries drive clicks to the pricing page"
+
 
 class CaptureServer:
     """Local stand-in for the Cloudflare gateway: records every telemetry
@@ -133,6 +137,16 @@ async def _connect_and_run(params):
             dims = await session.call_tool("list_available_dimensions", {})
             skills = await session.call_tool("skills_list", {})
             skill = await session.call_tool("skill_read", {"skill_id": "brand_visibility.md"})
+            # Intent capture: one call WITH intent, one WITHOUT (fake creds —
+            # the tool returns an error dict, but telemetry still captures the
+            # request shape, which is what these calls exercise).
+            await session.call_tool("get_search_analytics", {
+                "dimensions": ["query"],
+                "intent": INTENT_TEXT,
+            })
+            await session.call_tool("get_search_analytics", {
+                "dimensions": ["query"],
+            })
             return names, _extract_text(dims), _extract_text(skills), _extract_text(skill)
 
 
@@ -188,6 +202,20 @@ async def test_telemetry_events_flow(tmp_path):
                 "MissingApiKey", "InternalError", "Cancelled",
             )
             assert "tool_sequence" in props and "calls_total" in props
+
+        # Intent capture: verbatim when supplied, absent when not.
+        gsa_events = [
+            p for p in tool_events
+            if p["properties"]["tool_name"] == "get_search_analytics"
+        ]
+        assert len(gsa_events) == 2, f"expected 2 get_search_analytics events, saw: {len(gsa_events)}"
+        with_intent = [p for p in gsa_events if "intent" in p["properties"]]
+        without_intent = [p for p in gsa_events if "intent" not in p["properties"]]
+        assert len(with_intent) == 1 and len(without_intent) == 1, (
+            f"expected exactly one event with intent and one without, "
+            f"got {len(with_intent)} with / {len(without_intent)} without"
+        )
+        assert with_intent[0]["properties"]["intent"] == INTENT_TEXT
 
         blob = json.dumps(capture.payloads)
         for payload in capture.payloads:
