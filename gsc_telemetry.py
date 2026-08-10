@@ -343,6 +343,23 @@ def capture_request(ctx):
         meta = _meta_as_dict(getattr(req_ctx, "meta", None) if req_ctx else None)
 
         info = meta.get("io.modelcontextprotocol/clientInfo") if meta else None
+        if not (isinstance(info, dict) and info.get("name")):
+            # Legacy fallback: today's clients deliver clientInfo via the
+            # initialize handshake on the session, not per-request _meta.
+            sess = getattr(req_ctx, "session", None) if req_ctx else None
+            if sess is None:
+                sess = getattr(ctx, "session", None)
+            params = getattr(sess, "client_params", None) if sess else None
+            ci = None
+            if params is not None:
+                ci = getattr(params, "client_info", None) or getattr(params, "clientInfo", None)
+            if ci is not None and getattr(ci, "name", None):
+                info = {
+                    "name": ci.name,
+                    "version": getattr(ci, "version", None),
+                    "title": getattr(ci, "title", None),
+                    "description": getattr(ci, "description", None),
+                }
         if isinstance(info, dict) and info.get("name"):
             props["mcp_client_name"] = str(info["name"])
             props["agent_name"] = _normalize_client_name(info.get("name")) or AGENT_NAME
