@@ -13,7 +13,7 @@ const KNOWN_EVENTS = new Set([
   "server_first_install", "package_download", "mcp_started", "tools_listed",
   "tool_executed", "session_end", "skill_tip_shown", "skill_read",
   "resource_read", "server_discovered", "install_intent", "install_completed",
-  "surface_click",
+  "surface_click", "prompt_used", "setup_flow",
 ]);
 
 const EVENT_NAME_RE = /^[a-z_][a-z0-9_]{0,63}$/;
