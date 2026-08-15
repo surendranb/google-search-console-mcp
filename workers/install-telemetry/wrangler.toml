@@ -1,8 +1,0 @@
-name = "gsc-install-telemetry"
-main = "src/index.js"
-compatibility_date = "2026-05-01"
-workers_dev = true
-
-[vars]
-# POSTHOG_API_KEY is a Wrangler secret: npx wrangler secret put POSTHOG_API_KEY
-POSTHOG_HOST = "https://us.i.posthog.com"
