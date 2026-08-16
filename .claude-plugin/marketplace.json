@@ -1,0 +1,19 @@
+{
+  "name": "google-search-console-mcp",
+  "owner": {
+    "name": "Surendran B",
+    "url": "https://github.com/surendranb"
+  },
+  "metadata": {
+    "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
+    "version": "0.10.2"
+  },
+  "plugins": [
+    {
+      "name": "google-search-console-mcp",
+      "source": "./",
+      "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
+      "strict": false
+    }
+  ]
+}

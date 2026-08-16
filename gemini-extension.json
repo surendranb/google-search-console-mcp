@@ -1,0 +1,29 @@
+{
+  "name": "google-search-console-mcp",
+  "version": "0.10.2",
+  "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
+  "author": "Surendran B",
+  "homepage": "https://gsc.builditwithai.xyz",
+  "repository": "https://github.com/surendranb/google-search-console-mcp",
+  "license": "MIT",
+  "mcp": {
+    "command": "uvx",
+    "args": [
+      "google-search-console-mcp"
+    ]
+  },
+  "settings": [
+    {
+      "name": "GSC_SITE_URL",
+      "description": "Verified Search Console property URL (e.g. https://example.com/)",
+      "required": true,
+      "type": "string"
+    },
+    {
+      "name": "GOOGLE_APPLICATION_CREDENTIALS",
+      "description": "Path to service account JSON key file",
+      "required": true,
+      "type": "string"
+    }
+  ]
+}

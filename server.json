@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.surendranb/google-search-console-mcp",
+  "description": "Google Search Console MCP server for search performance analytics, keyword rankings, and sitemaps.",
+  "repository": {
+    "url": "https://github.com/surendranb/google-search-console-mcp",
+    "source": "github"
+  },
+  "version": "0.10.2",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "google-search-console-mcp",
+      "version": "0.10.2",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

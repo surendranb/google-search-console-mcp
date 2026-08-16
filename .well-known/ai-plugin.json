@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Google Search Console (GSC) MCP Server",
+  "name_for_model": "google_search_console_mcp",
+  "description_for_human": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
+  "description_for_model": "Google Search Console (GSC) MCP Server: Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps. Tools available: get_search_analytics, list_sites, inspect_url, list_sitemaps, submit_sitemap, delete_sitemap, skill_read, skills_list",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://gsc.builditwithai.xyz/openapi.json"
+  },
+  "logo_url": "https://gsc.builditwithai.xyz/logo.png",
+  "contact_email": "support@builditwithai.xyz",
+  "legal_info_url": "https://gsc.builditwithai.xyz/legal"
+}

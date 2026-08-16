@@ -136,3 +136,7 @@ site/
 # Debug logging
 gsc_debug.log 
 gsc_debug_test.py
+!server.json
+!gemini-extension.json
+!.claude-plugin/*.json
+!.well-known/*.json

@@ -1,0 +1,28 @@
+{
+  "name": "google-search-console-mcp",
+  "version": "0.10.2",
+  "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
+  "author": {
+    "name": "Surendran B",
+    "url": "https://github.com/surendranb"
+  },
+  "homepage": "https://gsc.builditwithai.xyz",
+  "repository": "https://github.com/surendranb/google-search-console-mcp",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude",
+    "cursor",
+    "ai-agents"
+  ],
+  "mcpServers": {
+    "google-search-console-mcp": {
+      "command": "uvx",
+      "args": [
+        "google-search-console-mcp"
+      ]
+    }
+  }
+}
