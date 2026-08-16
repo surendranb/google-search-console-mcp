@@ -1,83 +1,87 @@
-# AGENTS.md — Codebase Operational Guide for AI Agents
+# AGENTS.md — Agent Operating Manual
 
-> **Context, architecture, file map, and execution commands for AI coding agents (Claude Code, Cursor, Codex, Gemini, Antigravity, OpenCode, Aider) working on `google-search-console-mcp`.**
-
----
-
-## 1. Codebase Overview
-
-- **Language & Runtime**: Python 3.10+ (`mcp` FastMCP, `google-api-python-client`, `google-auth`, `httpx`).
-- **Package Name**: `google-search-console-mcp` (PyPI) / `google-search-console-mcp` (NPM thin wrapper).
-- **Core Function**: Connects LLMs to Google Search Console (Search Console API v1 / Webmasters API) to query clicks, impressions, CTR, average keyword rankings, live URL indexing inspection, and sitemaps.
+> **For AI Agents (Claude Code, Cursor, Codex, Gemini, Antigravity, OpenCode, Aider) connecting to or executing `google-search-console-mcp`.**
 
 ---
 
-## 2. Directory & File Map
+## ⚡ 1. Fast Install & Client Wiring (Start Here)
 
-```
-google-search-console-mcp/
-├── gsc_mcp_server.py          # Primary entry point: FastMCP server, tools registration, API client
-├── gsc_setup_flow.py          # Interactive authentication and setup helper
-├── gsc_telemetry.py           # Edge Schema v2 telemetry relay
-├── gsc_dimensions.json        # Cached list of supported GSC dimensions (query, page, country, device, date)
-├── gsc_metrics.json           # Supported metrics (clicks, impressions, ctr, position)
-├── gsc_filters.json           # Filter operator definitions
-├── skills/                    # Domain-specific SEO analysis skills (Markdown playbooks)
-│   ├── brand_visibility.md   # Brand vs non-brand search split analysis
-│   ├── citation_opportunities.md # Content citation & SERP ranking optimization
-│   ├── intent_efficiency.md  # High impression / low CTR query optimization
-│   ├── intent_segmentation.md# Informational vs transactional intent parsing
-│   └── search_appearance_audit.md # Rich snippets and search appearance tracking
-├── npm/                       # Thin Node.js CLI launcher
-│   ├── bin/index.js           # Subprocess wrapper spawning uvx google-search-console-mcp
-│   └── package.json           # NPM package metadata
-├── tests/                     # Automated test suite
-│   ├── test_gsc.py            # Tool execution and query parameter tests
-│   └── e2e/test_e2e.py        # End-to-end API integration tests
-├── pyproject.toml             # Python packaging, dependencies, and CLI entrypoint
-├── smithery.yaml              # Smithery.ai marketplace configuration
-├── server.json                # Official MCP registry specification
-├── gemini-extension.json      # Google Gemini / Antigravity extension manifest
-├── .claude-plugin/            # Claude Code plugin manifests (plugin.json, marketplace.json)
-└── .well-known/ai-plugin.json # OpenAI / ChatGPT Actions manifest
-```
-
----
-
-## 3. Environment Variables & Auth
-
-| Variable | Description | Required |
-|---|---|---|
-| `GSC_SITE_URL` | Verified site URL in Search Console (e.g. `https://example.com/` or `sc-domain:example.com`). | Yes (or passed per tool call) |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google Cloud Service Account JSON key file with GSC permissions. | Yes (or via ADC / gcloud auth) |
-| `DO_NOT_TRACK` / `MCP_TELEMETRY_OPT_OUT` | Set to `1` to disable anonymous telemetry. | Optional |
-
----
-
-## 4. Development & Testing Commands
+In 90% of cases, you just need to install and configure this MCP server for your user:
 
 ```bash
-# Install dependencies in editable mode
-uv sync || pip install -e ".[dev]"
+# 1-Line Universal Auto-Installer (Configures Claude Code, Cursor, Claude Desktop & Antigravity)
+curl -fsSL "https://gsc.builditwithai.xyz/install" | bash
 
-# Run the MCP server in stdio mode locally
-uv run python gsc_mcp_server.py
+# Or launch directly via stdio:
+uvx google-search-console-mcp
+npx -y google-search-console-mcp
+```
 
-# Run the test suite
-uv run pytest tests/ -v
-
-# Run linting
-uv run ruff check .
+### Client Config Snippet (`mcp.json` / `claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "google-search-console": {
+      "command": "uvx",
+      "args": ["google-search-console-mcp"],
+      "env": {
+        "GSC_SITE_URL": "https://example.com/",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service_account.json"
+      }
+    }
+  }
+}
 ```
 
 ---
 
-## 5. Tool Implementation Invariants & Gotchas
+## 📖 2. What This Repo Is
 
-1. **Site URL Formats (`gsc_mcp_server.py`)**:
-   - GSC property URLs can be either URL-prefix properties (`https://example.com/`) or Domain properties (`sc-domain:example.com`). Handle both without stripping the prefix.
+A production MCP server for **Google Search Console (GSC)**. It provides direct query access to the Google Search Console API v1 / Webmasters API for organic search metrics, keyword rankings, live URL indexing inspection, and sitemaps.
+
+### Primary Tools Available:
+- `get_search_analytics`: Query organic clicks, impressions, CTR, and average position grouped by query, page, country, device, and date.
+- `list_sites`: List all verified properties accessible to the service account.
+- `inspect_url`: Real-time URL indexing status, crawl issues, canonicalization, and mobile usability check.
+- `list_sitemaps`, `submit_sitemap`, `delete_sitemap`: Manage XML sitemaps.
+- `skill_read` / `skills_list`: Load built-in SEO diagnostic playbooks.
+
+---
+
+## 👤 3. How to Handle the Human (Auth & Setup)
+
+If credentials are not yet configured, guide the human with these steps:
+
+1. **Ask for their verified Site URL (`GSC_SITE_URL`)**:
+   - Must match Search Console exactly: e.g. `https://example.com/` (URL-prefix) or `sc-domain:example.com` (Domain property).
+2. **Ask for a Google Cloud Service Account JSON Key**:
+   - The Service Account email must be added as a **Full** or **Restricted** user in *Search Console → Settings → Users and permissions*.
+   - Once they have the JSON key file, set:
+     ```bash
+     export GSC_SITE_URL="https://example.com/"
+     export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service_account.json"
+     ```
+
+---
+
+## ⚠️ 4. Quirks & API Landmines (Zero-Hallucination Rules)
+
+1. **Site URL Formats**:
+   - URL-prefix properties **MUST include the trailing slash** (e.g. `https://example.com/`).
+   - Domain properties **MUST include the `sc-domain:` prefix** (e.g. `sc-domain:example.com`).
 2. **Dimension Constraints**:
-   - `get_search_analytics` allows grouping by `['query', 'page', 'country', 'device', 'date', 'searchAppearance']`.
-   - Max `row_limit` supported by GSC API is 25,000. Default to 1,000 for token efficiency.
-3. **Inspect URL API Quotas**:
-   - `inspect_url` calls the Search Console URL Inspection API which has strict daily quotas (2,000 calls/day). Return clear error messages if quota is exceeded.
+   - Allowed dimensions in `get_search_analytics`: `['query', 'page', 'country', 'device', 'date', 'searchAppearance']`.
+   - Max row limit is 25,000. Default to 1,000 to conserve context tokens.
+3. **URL Inspection Quota**:
+   - `inspect_url` calls the live Inspection API which has a strict daily quota of 2,000 calls per day. Use it surgically for single URLs, not in a broad loop.
+
+---
+
+## 🎯 5. Playbooks & Skills (How to Answer User Questions)
+
+When your human user asks SEO and search performance questions:
+
+- **"Which queries have high impressions but low CTR?"** → Call `skill_read(skill_name="intent_efficiency")`
+- **"What is our brand vs. non-brand search split?"** → Call `skill_read(skill_name="brand_visibility")`
+- **"How do I find rich snippet opportunities?"** → Call `skill_read(skill_name="search_appearance_audit")`
+- **"Which pages rank on page 2 (positions 11–20)?"** → Query `get_search_analytics` with `dimensions=['query', 'page']` and filter for average position between 10 and 20.
