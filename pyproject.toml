@@ -22,6 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+keywords = ["google-search-console", "gsc", "seo", "search-analytics", "mcp", "mcp-server", "model-context-protocol", "claude", "cursor", "ai-agents"]
 dependencies = [
     # MCP 2.0 (2026-07-28 spec). The standalone `fastmcp` package pins mcp<2.0
     # and cannot speak the new spec, so we depend on the official SDK directly.
