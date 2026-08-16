@@ -1,80 +1,83 @@
-# AGENTS.md — Agent Operational Manual
+# AGENTS.md — Codebase Operational Guide for AI Agents
 
-> **Canonical context and operating procedures for AI agents (Claude Code, Cursor, Codex, Gemini, Antigravity, OpenCode, Aider) operating on or integrating `google-search-console-mcp`.**
-
----
-
-## 1. System Identity & Mission
-
-- **Repository**: `surendranb/google-search-console-mcp`
-- **Package Name**: `google-search-console-mcp` (PyPI) / `google-search-console-mcp` (NPM)
-- **Live Portal**: [https://gsc.builditwithai.xyz](https://gsc.builditwithai.xyz)
-- **Purpose**: Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.
+> **Context, architecture, file map, and execution commands for AI coding agents (Claude Code, Cursor, Codex, Gemini, Antigravity, OpenCode, Aider) working on `google-search-console-mcp`.**
 
 ---
 
-## 2. Quickstart & Invocation for Agents
+## 1. Codebase Overview
 
-Agents integrating or executing this server should use stdio transport via either runtime:
+- **Language & Runtime**: Python 3.10+ (`mcp` FastMCP, `google-api-python-client`, `google-auth`, `httpx`).
+- **Package Name**: `google-search-console-mcp` (PyPI) / `google-search-console-mcp` (NPM thin wrapper).
+- **Core Function**: Connects LLMs to Google Search Console (Search Console API v1 / Webmasters API) to query clicks, impressions, CTR, average keyword rankings, live URL indexing inspection, and sitemaps.
 
-```bash
-# Python runtime (FastMCP / stdio)
-uvx google-search-console-mcp
+---
 
-# Universal 1-line auto-installer
-curl -fsSL "https://gsc.builditwithai.xyz/install" | bash
+## 2. Directory & File Map
+
 ```
-
-### Required Environment Variables
-- `GSC_SITE_URL`: Verified Search Console property URL (e.g. https://example.com/) (Required)
-- `GOOGLE_APPLICATION_CREDENTIALS`: Path to service account JSON key file (Required)
-
-
----
-
-## 3. Tool Reference & Capabilities
-
-| Tool | Capability Summary |
-|---|---|
-| `get_search_analytics` | Queries clicks, impressions, CTR, and average position by query/page/country/device. |
-| `list_sites` | Lists all verified web properties in Google Search Console. |
-| `inspect_url` | Real-time URL inspection for index status and mobile usability. |
-| `list_sitemaps` | Lists submitted XML sitemaps and indexing status. |
-| `submit_sitemap` | Submits a new XML sitemap to Google Search Console. |
-| `delete_sitemap` | Removes an obsolete sitemap. |
-| `skill_read` | Loads SEO diagnostic playbooks dynamically from GitHub. |
-| `skills_list` | Lists all available GSC analytical skills. |
-
----
-
-## 4. Agent Working Laws (Operational Rules)
-
-When contributing code, diagnosing bugs, or modifying this repository, all visiting agents must adhere strictly to these rules:
-
-1. **Truth Over Guessing**: Never fabricate responses, schema types, or error reasons. Run native verification scripts before asserting completion.
-2. **Shortest Working Diff (Lazy Senior Dev)**: Do not introduce unrequested abstractions, extra dependencies, or architectural bloat. Standard library and native platform features first.
-3. **Preserve Schema Stability**: Never remove or rename existing MCP tool parameters without strict backwards-compatibility layers.
-4. **Strict Telemetry Boundaries**: Diagnostic telemetry is non-PII and strictly opt-out. Never log user queries, credentials, file contents, or environment variables. Honor `DO_NOT_TRACK=1` and `MCP_TELEMETRY_OPT_OUT=1`.
-5. **No Direct Main Commits**: Always create a feature or fix branch before modifying code.
-
----
-
-## 5. Verification & Test Protocol
-
-Before marking any task as complete in this repository, run the test suite:
-
-```bash
-# Run automated verification suite
-uv run pytest -v || python3 -m unittest
+google-search-console-mcp/
+├── gsc_mcp_server.py          # Primary entry point: FastMCP server, tools registration, API client
+├── gsc_setup_flow.py          # Interactive authentication and setup helper
+├── gsc_telemetry.py           # Edge Schema v2 telemetry relay
+├── gsc_dimensions.json        # Cached list of supported GSC dimensions (query, page, country, device, date)
+├── gsc_metrics.json           # Supported metrics (clicks, impressions, ctr, position)
+├── gsc_filters.json           # Filter operator definitions
+├── skills/                    # Domain-specific SEO analysis skills (Markdown playbooks)
+│   ├── brand_visibility.md   # Brand vs non-brand search split analysis
+│   ├── citation_opportunities.md # Content citation & SERP ranking optimization
+│   ├── intent_efficiency.md  # High impression / low CTR query optimization
+│   ├── intent_segmentation.md# Informational vs transactional intent parsing
+│   └── search_appearance_audit.md # Rich snippets and search appearance tracking
+├── npm/                       # Thin Node.js CLI launcher
+│   ├── bin/index.js           # Subprocess wrapper spawning uvx google-search-console-mcp
+│   └── package.json           # NPM package metadata
+├── tests/                     # Automated test suite
+│   ├── test_gsc.py            # Tool execution and query parameter tests
+│   └── e2e/test_e2e.py        # End-to-end API integration tests
+├── pyproject.toml             # Python packaging, dependencies, and CLI entrypoint
+├── smithery.yaml              # Smithery.ai marketplace configuration
+├── server.json                # Official MCP registry specification
+├── gemini-extension.json      # Google Gemini / Antigravity extension manifest
+├── .claude-plugin/            # Claude Code plugin manifests (plugin.json, marketplace.json)
+└── .well-known/ai-plugin.json # OpenAI / ChatGPT Actions manifest
 ```
 
 ---
 
-## 6. Plugin & Marketplace Discovery Pointers
+## 3. Environment Variables & Auth
 
-- **Claude Code**: `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`
-- **Gemini CLI / Antigravity**: `gemini-extension.json`
-- **Smithery.ai**: `smithery.yaml`
-- **Official MCP Registry & Glama**: `server.json`
-- **OpenAI / ChatGPT Actions**: `.well-known/ai-plugin.json`
-- **AI Search Crawlers (GEO)**: `llms.txt`
+| Variable | Description | Required |
+|---|---|---|
+| `GSC_SITE_URL` | Verified site URL in Search Console (e.g. `https://example.com/` or `sc-domain:example.com`). | Yes (or passed per tool call) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google Cloud Service Account JSON key file with GSC permissions. | Yes (or via ADC / gcloud auth) |
+| `DO_NOT_TRACK` / `MCP_TELEMETRY_OPT_OUT` | Set to `1` to disable anonymous telemetry. | Optional |
+
+---
+
+## 4. Development & Testing Commands
+
+```bash
+# Install dependencies in editable mode
+uv sync || pip install -e ".[dev]"
+
+# Run the MCP server in stdio mode locally
+uv run python gsc_mcp_server.py
+
+# Run the test suite
+uv run pytest tests/ -v
+
+# Run linting
+uv run ruff check .
+```
+
+---
+
+## 5. Tool Implementation Invariants & Gotchas
+
+1. **Site URL Formats (`gsc_mcp_server.py`)**:
+   - GSC property URLs can be either URL-prefix properties (`https://example.com/`) or Domain properties (`sc-domain:example.com`). Handle both without stripping the prefix.
+2. **Dimension Constraints**:
+   - `get_search_analytics` allows grouping by `['query', 'page', 'country', 'device', 'date', 'searchAppearance']`.
+   - Max `row_limit` supported by GSC API is 25,000. Default to 1,000 for token efficiency.
+3. **Inspect URL API Quotas**:
+   - `inspect_url` calls the Search Console URL Inspection API which has strict daily quotas (2,000 calls/day). Return clear error messages if quota is exceeded.
