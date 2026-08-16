@@ -1,74 +1,73 @@
-<p align="center">
-  <img src="logo.svg" alt="Google Search Console MCP Logo" width="120" />
-</p>
+# Google Search Console (GSC) MCP Server 🔍
 
-# Google Search Console MCP "Intel Engine" 🚀
+> **Model Context Protocol (MCP) server for Google Search Console: search performance analytics, keyword rankings, sitemap inspection, and indexing health for AI agents.**
 
-[![PyPI version](https://badge.fury.io/py/google-search-console-mcp.svg)](https://badge.fury.io/py/google-search-console-mcp)
-[![PyPI Downloads](https://static.pepy.tech/badge/google-search-console-mcp)](https://pepy.tech/projects/google-search-console-mcp)
-[![GitHub stars](https://img.shields.io/github/stars/surendranb/google-search-console-mcp?style=social)](https://github.com/surendranb/google-search-console-mcp/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/surendranb/google-search-console-mcp?style=social)](https://github.com/surendranb/google-search-console-mcp/network/members)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://img.shields.io/pypi/v/google-search-console-mcp?label=PyPI&color=blue)](https://pypi.org/project/google-search-console-mcp/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/google-search-console-mcp?label=PyPI%20downloads&color=blue)](https://pypi.org/project/google-search-console-mcp/)
+[![npm version](https://img.shields.io/npm/v/google-search-console-mcp?label=npm&color=red)](https://www.npmjs.com/package/google-search-console-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/google-search-console-mcp?label=npm%20downloads&color=red)](https://www.npmjs.com/package/google-search-console-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/Docs-gsc.builditwithai.xyz-purple)](https://gsc.builditwithai.xyz)
 
-**The Authority-Based Visibility Governance Tool for the Evolving Search Landscape.**
-
-This is not just a data wrapper. It is a strategic "Intel" engine that transforms raw Google Search Console signals into actionable marketing insights. It is designed for marketers who need to understand their performance in a search landscape increasingly defined by AI Overviews and conversational search. **Compatible with any MCP-compliant AI Agent.**
-
-<p align="center">
-  <img src="https://pypi.builditwithai.xyz/api/v1/google-search-console-mcp/banner.svg" alt="PyPI Downloads Breakdown and Trend" width="800" /><br>
-  <sub>Analytics powered by <a href="https://pypi.builditwithai.xyz">pypi.builditwithai.xyz</a></sub>
-</p>
-
-## 🎯 Authoritative "Intel" Tools
-
-| Tool Name | Actionable Marketing Intel Provided |
-| :--- | :--- |
-| **`get_search_appearance_audit`** | **Cannibalization Intel.** Detects if you are being used as a "Silent Reference" (high visibility but no clicks) in specialized SERP features. |
-| **`get_intent_segmentation`** | **Strategic Audience Intel.** Segments traffic into "Searchers" (Traditional Keywords) vs. "Prompters" (Natural Language/AI Prompts). |
-| **`identify_citation_opportunities`** | **Growth Intel.** Finds content that satisfies user intent so well that users don't click. Recommends "Click-Triggers." |
-| **`get_technical_citation_audit`** | **Technical Health Overlay.** Cross-checks high-visibility pages with the URL Inspection API to find disqualifying crawl errors. |
-| **`get_brand_visibility_summary`** | **Brand Health Intel.** Measures your Brand's "Reference Value" vs its "Destination Value." |
-| **`calculate_intent_efficiency`** | **Conversion Intel.** Shows which search intent (Informational/Navigational) is most effectively driving site visits. |
+🌐 **Live Documentation & Web Portal**: [https://gsc.builditwithai.xyz](https://gsc.builditwithai.xyz)
 
 ---
 
-## 🚀 Getting Started
+## ⚡ Quickstart
 
-### 1. Google Search Console Setup
-Before installing the MCP server, you must configure Google Cloud and Search Console access:
-
-**A. Create Service Account:**
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a new project and enable the **Google Search Console API**.
-3. Go to **APIs & Services > Credentials** and create a **Service Account**.
-4. Create a **JSON Key** for the service account and download it (save as `gsc-key.json`).
-
-**B. Grant Access in Search Console:**
-1. Open your JSON key file and copy the `client_email` address.
-2. Go to [Google Search Console](https://search.google.com/search-console).
-3. Select your property and go to **Settings > Users and Permissions**.
-4. Click **Add User**, paste the service account email, and select **Full** permissions.
-
-**C. Identify Your Property URL:**
-- For **Domain properties**, use the format: `sc-domain:example.com`
-- For **URL-prefix properties**, use the full URL: `https://example.com/`
-
-### 2. Installation
 ```bash
-pip install google-search-console-mcp
+# 1-Line Universal Installer (Auto-configures Claude Code, Cursor, Claude Desktop & Antigravity)
+curl -fsSL "https://gsc.builditwithai.xyz/install" | bash
+
+# Or run directly via your preferred runtime:
+uvx google-search-console-mcp
+npx -y google-search-console-mcp
 ```
 
-### 3. Configuration (Universal AI Agent)
-Add this to your agent's MCP settings file:
+---
+
+## 🤖 Client Setup
+
+### A. Claude Code (CLI)
+```bash
+claude mcp add google-search-console -- uvx google-search-console-mcp
+```
+
+### B. Cursor & Google Antigravity (`mcp.json`)
 ```json
 {
   "mcpServers": {
-    "gsc-search": {
-      "command": "gsc-mcp",
+    "google-search-console": {
+      "command": "uvx",
+      "args": ["google-search-console-mcp"]
+    }
+  }
+}
+```
+
+### C. Claude Desktop (`claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "google-search-console": {
+      "command": "uvx",
+      "args": ["google-search-console-mcp"],
       "env": {
-        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/your/gsc-key.json",
-        "GSC_SITE_URL": "sc-domain:example.com"
+        "GSC_SITE_URL": "https://example.com/",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service_account.json"
       }
+    }
+  }
+}
+```
+
+### D. VS Code (Cline / Roo Code / Continue)
+```json
+{
+  "mcpServers": {
+    "google-search-console": {
+      "command": "npx",
+      "args": ["-y", "google-search-console-mcp"]
     }
   }
 }
@@ -76,18 +75,34 @@ Add this to your agent's MCP settings file:
 
 ---
 
-## 🛠️ Project Philosophy
-This project focuses on **high-leverage data analysis** for modern search:
-- **Simplicity First**: Minimum code for maximum insight.
-- **Token Efficiency**: Server-side aggregation prevents "Context Length" issues.
-- **Authoritative Data**: We only use official Google Search Console API signals. No speculative "AI SEO" hacks.
+## 🛠️ Tools & Capabilities
+
+| Tool Name | Parameters | Description | Return Type |
+|---|---|---|---|
+| `get_search_analytics` | `site_url` (string), `start_date` (string), `end_date` (string), `dimensions` (list), `row_limit` (int) | Queries organic search clicks, impressions, CTR, and average position grouped by query, page, country, device, and date. | `JSON / Markdown` |
+| `list_sites` | *(none)* | Lists all verified web properties in Google Search Console with permission levels. | `JSON` |
+| `inspect_url` | `site_url` (string), `inspection_url` (string) | Real-time URL inspection for index status, crawl issues, canonicalization, and mobile usability. | `JSON` |
+| `list_sitemaps` | `site_url` (string) | Retrieves all submitted XML sitemaps, last download date, and indexed URL counts. | `JSON` |
+| `submit_sitemap` | `site_url` (string), `feedpath` (string) | Submits a new XML sitemap directly to Google Search Console. | `JSON` |
+| `delete_sitemap` | `site_url` (string), `feedpath` (string) | Removes an obsolete or incorrect sitemap from Search Console. | `JSON` |
+| `skill_read` | `skill_name` (string) | Loads expert SEO diagnostic playbooks dynamically from GitHub. | `Markdown` |
+| `skills_list` | *(none)* | Lists all available live GSC analytical skills. | `JSON` |
 
 ---
 
-## Telemetry & Privacy
-This server sends anonymous usage telemetry (server version, OS, Python version, MCP client name, tool name, latency, error category) to help improve it. It never collects PII, your Search Console data, credentials, or file paths. Opt out any time by setting `DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1`, `NO_TELEMETRY=1`, or `GSC_MCP_TELEMETRY=false`.
+## 🔒 Telemetry & Privacy
+
+This package collects anonymous, non-PII diagnostic telemetry (command executions, latency, error codes) to improve tool reliability. No queries, user credentials, personal data, source code, or environment variables are ever collected or stored.
+
+You can opt out anytime by setting either of the following environment variables:
+```bash
+export DO_NOT_TRACK=1
+# or
+export MCP_TELEMETRY_OPT_OUT=1
+```
 
 ---
 
-## License
-MIT License
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.

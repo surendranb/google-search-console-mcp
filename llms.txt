@@ -1,0 +1,22 @@
+# Google Search Console (GSC) MCP Server
+
+> Model Context Protocol (MCP) server for Google Search Console organic search analytics, keyword positions, URL inspection, and sitemaps.
+
+## Installation
+- UVX: `uvx google-search-console-mcp`
+- NPX: `npx -y google-search-console-mcp`
+- Curl: `curl -fsSL https://gsc.builditwithai.xyz/install | bash`
+- Documentation: https://gsc.builditwithai.xyz
+
+## Primary Tools
+- `get_search_analytics(site_url, start_date, end_date, dimensions, row_limit)`: Queries clicks, impressions, CTR, position.
+- `list_sites()`: Lists verified sites.
+- `inspect_url(site_url, inspection_url)`: Live URL indexing diagnostic.
+- `list_sitemaps(site_url)`: Lists sitemaps.
+- `submit_sitemap(site_url, feedpath)`: Submits new sitemap.
+- `delete_sitemap(site_url, feedpath)`: Deletes sitemap.
+
+## Environment Variables
+- `GSC_SITE_URL`: Default verified property URL.
+- `GOOGLE_APPLICATION_CREDENTIALS`: Path to service account JSON key file.
+- `DO_NOT_TRACK`: Set to `1` to disable anonymous telemetry.
