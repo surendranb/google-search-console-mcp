@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Google Search Console MCP Server</title>
+<meta name="description" content="Model Context Protocol server for Google Search Console: search performance analytics, keyword rankings, sitemap inspection, and indexing health for AI agents." />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .navitem { display: block; font-size: 13px; padding: 6px 10px; border-radius: 6px; color: #5f6368; text-decoration: none; transition: all 0.15s ease; }
+  .navitem:hover { background: #ecece7; color: #111318; }
+  .kicker { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #747982; font-weight: 600; }
+  .card { background: #ffffff; border: 1px solid #e5e6e4; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+  .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  
+  /* Prose Typography for Markdown content */
+  .article-body h2 { font-size: 1.55rem; font-weight: 800; color: #111318; letter-spacing: -0.025em; margin-top: 1.75rem; margin-bottom: 0.75rem; }
+  .article-body h3 { font-size: 1.1rem; font-weight: 700; color: #111318; letter-spacing: -0.015em; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+  .article-body p { margin-bottom: 1rem; }
+  .article-body ul { list-style-type: disc; padding-left: 1.25rem; margin-bottom: 1rem; }
+  .article-body ul li { margin-bottom: 0.35rem; }
+  .article-body pre { background: #fbfbfa; border: 1px solid #e5e6e4; border-radius: 8px; padding: 1rem; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5; color: #474b52; margin: 1rem 0; }
+  .article-body code:not(pre code) { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #ecece7; padding: 2px 6px; border-radius: 4px; }
+  .article-body a { color: #315cf5; text-decoration: underline; text-underline-offset: 2px; }
+  .article-body hr { border: 0; border-top: 1px solid #e5e6e4; margin: 3.5rem 0; }
+  .article-body img { border-radius: 12px; border: 1px solid #e5e6e4; box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
+</style>
+</head>
+<body class="bg-[#f6f6f3] text-[#111318] antialiased selection:bg-[#315cf5]/15 selection:text-[#111318]">
+
+<!-- HEADER -->
+<header class="border-b border-[#e5e6e4] bg-[#fbfbfa] sticky top-0 z-40 backdrop-blur-md bg-opacity-95">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <a href="https://builditwithai.xyz" class="mono text-sm font-bold tracking-tight text-[#111318]">builditwithai<span class="text-[#315cf5]">.xyz</span></a>
+      <span class="text-xs text-[#9aa0a6]">/</span>
+      <span class="mono text-xs text-[#5f6368]">gsc-mcp</span>
+    </div>
+    <div class="flex items-center gap-4 text-xs mono text-[#5f6368]">
+      <span class="hidden md:inline">GSC API v3 · Performance Analytics · Keyword Tracking · Zero Cloud</span>
+      <a href="https://github.com/surendranb/google-search-console-mcp" target="_blank" rel="noreferrer" class="text-[#315cf5] hover:underline font-medium">github/gsc-mcp</a>
+    </div>
+  </div>
+</header>
+
+<!-- ARTICLE CONTAINER -->
+<article class="max-w-7xl mx-auto px-6 pt-12 pb-24">
+  
+  <!-- HERO HEADER -->
+  <header class="max-w-4xl mb-12">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="kicker text-[#315cf5]">ORGANIC SEARCH MCP</span>
+      <span class="text-xs text-[#9aa0a6]">·</span>
+      <span class="mono text-xs text-[#747982]">Google Search Console Bridge</span>
+    </div>
+    
+    <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight text-[#111318] leading-[1.12]">
+      Google Search Console MCP Server
+    </h1>
+    
+    
+    <p class="mt-4 text-xl text-[#5f6368] leading-relaxed font-normal">
+      How do you give an AI agent direct access to your site&#39;s Google Search Console performance? This MCP server connects Claude, Cursor, and autonomous agents directly to the Google Search Console API—enabling automated query analysis, CTR anomaly detection, indexing inspection, and sitemap audits.
+    </p>
+    
+
+    <!-- METADATA CHIPS -->
+    
+    <div class="mt-6 flex flex-wrap gap-2 text-xs mono text-[#5f6368]">
+      
+      <span class="px-2.5 py-1 bg-[#ecece7] rounded-md">MCP 2.0</span>
+      
+      <span class="px-2.5 py-1 bg-[#ecece7] rounded-md">Google Search Console API</span>
+      
+      <span class="px-2.5 py-1 bg-[#ecece7] rounded-md">Python &amp; TypeScript</span>
+      
+      <span class="px-2.5 py-1 bg-[#ecece7] rounded-md">Service Account &amp; OAuth</span>
+      
+      <span class="px-2.5 py-1 bg-[#ecece7] rounded-md">Zero Data Retention</span>
+      
+    </div>
+    
+  </header>
+
+  <!-- 2-COLUMN LAYOUT -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+    
+    <!-- LEFT SIDEBAR: Table of Contents -->
+    <aside class="hidden lg:block lg:col-span-3 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2">
+      <nav class="space-y-4 text-xs border-l border-[#e5e6e4] pl-3 py-1">
+        <div class="kicker text-[10px] text-[#9aa0a6] px-2 mb-1">Architecture & Guide</div>
+        
+        <a class="navitem" href="#quickstart">1. 1-Line Quickstart</a>
+        
+        <a class="navitem" href="#the-bridge">2. The Search Console Bridge</a>
+        
+        <a class="navitem" href="#agent-setup">3. Agent Configuration</a>
+        
+        <a class="navitem" href="#tools-reference">4. Tool &amp; Parameter Reference</a>
+        
+      </nav>
+    </aside>
+
+    <!-- RIGHT MAIN CONTENT -->
+    <div class="lg:col-span-9 max-w-4xl w-full article-body space-y-16 text-[15.5px] leading-[1.75] text-[#111318]/90">
+      <section id="quickstart" class="space-y-6">
+<div class="kicker">01 / Getting Started</div>
+<h2>1-Line Quickstart</h2>
+<pre><code class="language-bash"># ⚡ 1-Line Universal Installer
+curl -fsSL https://gsc.builditwithai.xyz/install | bash
+
+# 📦 Run directly via Python (uvx)
+uvx google-search-console-mcp
+
+# 📦 Run directly via Node (npx)
+npx -y google-search-console-mcp
+</code></pre>
+</section>
+<hr>
+<section id="the-bridge" class="space-y-6">
+<div class="kicker">02 / Capabilities</div>
+<h2>The Search Console Bridge</h2>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+<div class="p-4 bg-[#fbfbfa] rounded-lg border border-[#e5e6e4] space-y-1.5">
+<b>1. 📈 Query &amp; Keyword Performance</b>
+<p class="text-[#747982] leading-relaxed !mb-0">Fetches clicks, impressions, CTR, and average position metrics broken down by query, page URL, device type, and country.</p>
+</div>
+<div class="p-4 bg-[#fbfbfa] rounded-lg border border-[#e5e6e4] space-y-1.5">
+<b>2. 🔍 Real-Time URL Inspection</b>
+<p class="text-[#747982] leading-relaxed !mb-0">Checks Googlebot crawl state, canonical URL selection, mobile usability, and index coverage for any specific page.</p>
+</div>
+<div class="p-4 bg-[#fbfbfa] rounded-lg border border-[#e5e6e4] space-y-1.5">
+<b>3. 🗺️ Sitemap Health &amp; Submissions</b>
+<p class="text-[#747982] leading-relaxed !mb-0">Lists submitted sitemaps, inspects XML parse errors, and submits fresh sitemap endpoints programmatically.</p>
+</div>
+<div class="p-4 bg-[#fbfbfa] rounded-lg border border-[#e5e6e4] space-y-1.5">
+<b>4. 🔒 Enterprise Privacy</b>
+<p class="text-[#747982] leading-relaxed !mb-0">Uses standard Google Cloud Service Account JSON credentials or OAuth2 tokens stored strictly on your local machine.</p>
+</div>
+</div>
+</section>
+<hr>
+<section id="agent-setup" class="space-y-6">
+<div class="kicker">03 / Configuration</div>
+<h2>Agent Configuration</h2>
+<h3>Claude Code CLI</h3>
+<pre><code class="language-bash">claude mcp add gsc -- uvx google-search-console-mcp
+</code></pre>
+<h3>Cursor &amp; Google Antigravity (<code>mcp.json</code>)</h3>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;google-search-console&quot;: {
+      &quot;command&quot;: &quot;uvx&quot;,
+      &quot;args&quot;: [&quot;google-search-console-mcp&quot;],
+      &quot;env&quot;: {
+        &quot;GSC_CREDENTIALS_PATH&quot;: &quot;/path/to/service-account.json&quot;
+      }
+    }
+  }
+}
+</code></pre>
+</section>
+<hr>
+<section id="tools-reference" class="space-y-6">
+<div class="kicker">04 / Tools</div>
+<h2>Tool &amp; Parameter Reference</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Tool Name</th>
+<th style="text-align:left">Parameters</th>
+<th style="text-align:left">Description</th>
+<th style="text-align:left">Return Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>get_search_analytics</code></td>
+<td style="text-align:left"><code>site_url</code>, <code>start_date</code>, <code>end_date</code>, <code>dimensions</code></td>
+<td style="text-align:left">Fetches clicks, impressions, CTR, and average position across query/page/device.</td>
+<td style="text-align:left"><code>JSON</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>inspect_url</code></td>
+<td style="text-align:left"><code>site_url</code>, <code>inspection_url</code></td>
+<td style="text-align:left">Checks index status, crawl issues, and canonical URL compliance.</td>
+<td style="text-align:left"><code>JSON</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>list_sites</code></td>
+<td style="text-align:left"><em>(none)</em></td>
+<td style="text-align:left">Lists all verified web properties in the connected GSC account.</td>
+<td style="text-align:left"><code>JSON</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>list_sitemaps</code></td>
+<td style="text-align:left"><code>site_url</code></td>
+<td style="text-align:left">Retrieves all submitted sitemaps and their last crawl timestamp.</td>
+<td style="text-align:left"><code>JSON</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>submit_sitemap</code></td>
+<td style="text-align:left"><code>site_url</code>, <code>feedpath</code></td>
+<td style="text-align:left">Submits a fresh XML sitemap endpoint to Googlebot.</td>
+<td style="text-align:left"><code>JSON</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+
+    </div>
+  </div>
+
+</article>
+
+<!-- FOOTER -->
+<footer class="border-t border-[#e5e6e4] bg-[#fbfbfa] py-12 mt-24 text-xs text-[#747982] mono">
+  <div class="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div>
+      <span>Part of <a href="https://builditwithai.xyz" class="text-[#315cf5] hover:underline font-semibold">BuildItWithAI Studio</a> by <a href="https://surendranb.com" class="hover:underline">Surendran</a></span>
+    </div>
+    <div class="flex items-center gap-6">
+      <a href="https://github.com/surendranb/google-search-console-mcp" class="hover:underline">GitHub</a>
+      <a href="https://builditwithai.xyz/#gsc-mcp" class="hover:underline">Studio Card</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

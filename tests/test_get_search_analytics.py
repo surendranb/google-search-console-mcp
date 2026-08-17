@@ -118,6 +118,38 @@ class GetSearchAnalyticsRequestBodyTests(unittest.TestCase):
         self.assertIn("error", result)
         self.assertEqual(self.captured_body, {})
 
+    def test_numeric_and_bool_coercion_handles_strings_and_none(self):
+        # row_limit as string, start_row as string, summary_only as string
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["query"],
+            row_limit="500",
+            start_row="20",
+            summary_only="false"
+        ))
+        self.assertNotIn("error", result, msg=result)
+        self.assertEqual(self.captured_body["rowLimit"], 500)
+        self.assertEqual(self.captured_body["startRow"], 20)
+
+        # None inputs safely fallback to defaults
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["query"],
+            row_limit=None,
+            start_row=None
+        ))
+        self.assertNotIn("error", result, msg=result)
+        self.assertEqual(self.captured_body["rowLimit"], 1000)
+        self.assertEqual(self.captured_body["startRow"], 0)
+
+        # Clamp max row_limit to 25000 and min to 1
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["query"],
+            row_limit="99999",
+            start_row="-5"
+        ))
+        self.assertNotIn("error", result, msg=result)
+        self.assertEqual(self.captured_body["rowLimit"], 25000)
+        self.assertEqual(self.captured_body["startRow"], 0)
+
     def test_summary_only_returns_aggregated_totals(self):
         def fake_get_gsc_service():
             service = MagicMock()

@@ -1,6 +1,6 @@
 {
   "name": "google-search-console-mcp",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
   "author": {
     "name": "Surendran B",

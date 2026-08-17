@@ -6,12 +6,12 @@
     "url": "https://github.com/surendranb/google-search-console-mcp",
     "source": "github"
   },
-  "version": "0.10.2",
+  "version": "0.10.3",
   "packages": [
     {
-      "registryType": "pypi",
-      "identifier": "google-search-console-mcp",
-      "version": "0.10.2",
+      "registry": "pypi",
+      "name": "google-search-console-mcp",
+      "version": "0.10.3",
       "transport": {
         "type": "stdio"
       }

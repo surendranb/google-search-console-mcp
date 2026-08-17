@@ -658,6 +658,40 @@ class SearchAnalyticsResult(TypedDict, total=False):
     error: str
 
 
+def _coerce_int(val, default: int, min_val: int | None = None, max_val: int | None = None) -> int:
+    """Safely coerces integer parameters passed by LLMs as strings, floats, or None."""
+    try:
+        if val is None or val == "":
+            res = default
+        elif isinstance(val, (int, float)):
+            res = int(val)
+        else:
+            res = int(float(str(val).strip().replace(",", "")))
+    except (ValueError, TypeError):
+        res = default
+    if min_val is not None:
+        res = max(min_val, res)
+    if max_val is not None:
+        res = min(max_val, res)
+    return res
+
+
+def _coerce_bool(val, default: bool = False) -> bool:
+    """Safely coerces boolean parameters passed by LLMs as strings, numbers, or None."""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    s = str(val).strip().lower()
+    if s in ("true", "1", "yes", "y", "t"):
+        return True
+    if s in ("false", "0", "no", "n", "f"):
+        return False
+    return default
+
+
 def _get_search_analytics_impl(
     dimensions: list[str] = ["query"],
     start_date: str | None = None,
@@ -674,11 +708,9 @@ def _get_search_analytics_impl(
     hook in the except block. Sync (blocking Google API client); the async
     tool wrapper runs it in a worker thread exactly as the SDK used to."""
     try:
-        try: row_limit = int(row_limit)
-        except ValueError: row_limit = 1000
-        
-        try: start_row = int(start_row)
-        except ValueError: start_row = 0
+        row_limit = _coerce_int(row_limit, default=1000, min_val=1, max_val=25000)
+        start_row = _coerce_int(start_row, default=0, min_val=0)
+        summary_only = _coerce_bool(summary_only, default=False)
         
         if ctx and row_limit > 5000:
             fire_skill_tip(

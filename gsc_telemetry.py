@@ -25,9 +25,24 @@ from pathlib import Path
 
 GATEWAY_URL = os.getenv(
     "GSC_MCP_TELEMETRY_URL",
-    "https://gsc-install-telemetry.reachsuren.workers.dev/e",
+    "https://gsc.builditwithai.xyz/e",
 )
+GATEWAY_URLS = [
+    GATEWAY_URL,
+    "https://gsc-install-telemetry.reachsuren.workers.dev/e",
+]
 SCHEMA_VERSION = 2
+
+_RUNTIME_CLIENT = {
+    "name": None,
+    "version": None,
+    "agent": None,
+    "title": None,
+    "description": None,
+    "protocol_version": None,
+    "caps": None,
+    "caps_raw": None,
+}
 
 try:
     import importlib.metadata
@@ -361,8 +376,13 @@ def capture_request(ctx):
                     "description": getattr(ci, "description", None),
                 }
         if isinstance(info, dict) and info.get("name"):
+            _RUNTIME_CLIENT["name"] = str(info["name"])
+            _RUNTIME_CLIENT["version"] = str(info.get("version")) if info.get("version") else None
+            _RUNTIME_CLIENT["agent"] = _normalize_client_name(info.get("name")) or AGENT_NAME
+            _RUNTIME_CLIENT["title"] = str(info["title"]) if info.get("title") else None
+            _RUNTIME_CLIENT["description"] = str(info["description"]) if info.get("description") else None
             props["mcp_client_name"] = str(info["name"])
-            props["agent_name"] = _normalize_client_name(info.get("name")) or AGENT_NAME
+            props["agent_name"] = _RUNTIME_CLIENT["agent"]
             if info.get("version"):
                 props["mcp_client_version"] = str(info["version"])
             if info.get("title"):
@@ -374,6 +394,7 @@ def capture_request(ctx):
         if not proto:
             proto = getattr(ctx, "protocol_version", None)
         if proto:
+            _RUNTIME_CLIENT["protocol_version"] = str(proto)
             props["mcp_protocol_version"] = str(proto)
 
         caps = None
@@ -386,6 +407,7 @@ def capture_request(ctx):
             except Exception:
                 caps = None
         if isinstance(caps, dict):
+            _RUNTIME_CLIENT["caps_raw"] = caps
             props["client_supports_sampling"] = "sampling" in caps
             props["client_supports_roots"] = "roots" in caps
             props["client_supports_elicitation"] = "elicitation" in caps
@@ -414,6 +436,8 @@ def request_supports_elicitation(ctx) -> bool:
     Gates setup recovery (S7): only clients that can actually show a prompt
     get elicited; everyone else gets the guided error brief. Never raises."""
     try:
+        if _RUNTIME_CLIENT.get("caps_raw") and "elicitation" in (_RUNTIME_CLIENT.get("caps_raw") or {}):
+            return True
         return bool(capture_request(ctx).get("client_supports_elicitation"))
     except Exception:
         return False
@@ -481,13 +505,23 @@ def send_telemetry(event: str, properties: dict = None):
                 "cpu_arch": CPU_ARCH,
                 "in_virtual_env": IN_VIRTUAL_ENV,
                 "timezone_offset": TIMEZONE_OFFSET,
-                "agent_name": AGENT_NAME,
+                "agent_name": _RUNTIME_CLIENT["agent"] or AGENT_NAME,
                 "run_context": RUN_CONTEXT,
                 "discovery_channel": DISCOVERY_CHANNEL,
                 "raw_env": ENV_SIGNALS,
                 "session_id": SESSION_ID,
                 **(properties or {}),
             }
+            if _RUNTIME_CLIENT["name"]:
+                props.setdefault("mcp_client_name", _RUNTIME_CLIENT["name"])
+                if _RUNTIME_CLIENT["version"]:
+                    props.setdefault("mcp_client_version", _RUNTIME_CLIENT["version"])
+                if _RUNTIME_CLIENT["title"]:
+                    props.setdefault("mcp_client_title", _RUNTIME_CLIENT["title"])
+                if _RUNTIME_CLIENT["description"]:
+                    props.setdefault("mcp_client_description", _RUNTIME_CLIENT["description"])
+                if _RUNTIME_CLIENT["protocol_version"]:
+                    props.setdefault("mcp_protocol_version", _RUNTIME_CLIENT["protocol_version"])
             if INTERNAL_RUN:
                 props["internal_run"] = True
             if INSTALL_SOURCE:
@@ -505,16 +539,22 @@ def send_telemetry(event: str, properties: dict = None):
                 "distinct_id": INSTALLATION_ID,
                 "properties": props,
             }
-            req = urllib.request.Request(
-                GATEWAY_URL,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    # Product UA: default library UAs are rejected at the edge
-                    "User-Agent": f"google-search-console-mcp/{MCP_SERVER_VERSION}",
-                },
-            )
-            urllib.request.urlopen(req, timeout=3)
+            for gw_url in GATEWAY_URLS:
+                try:
+                    req = urllib.request.Request(
+                        gw_url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/json",
+                            # Product UA: default library UAs are rejected at the edge
+                            "User-Agent": f"google-search-console-mcp/{MCP_SERVER_VERSION}",
+                        },
+                    )
+                    with urllib.request.urlopen(req, timeout=3) as resp:
+                        if resp.status < 400:
+                            break
+                except Exception:
+                    continue
         except Exception:
             pass
 

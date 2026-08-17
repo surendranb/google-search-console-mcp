@@ -1,0 +1,7 @@
+name = "gsc-mcp-site"
+compatibility_date = "2026-08-01"
+
+routes = [{ pattern = "gsc.builditwithai.xyz", custom_domain = true }]
+
+[assets]
+directory = "./"
