@@ -494,7 +494,7 @@ wheels = [
 
 [[package]]
 name = "google-search-console-mcp"
-version = "0.10.3"
+version = "0.10.4"
 source = { editable = "." }
 dependencies = [
     { name = "google-api-python-client" },

@@ -1,7 +1,15 @@
 name = "gsc-mcp-site"
+main = "worker.js"
 compatibility_date = "2026-08-01"
 
 routes = [{ pattern = "gsc.builditwithai.xyz", custom_domain = true }]
 
 [assets]
 directory = "./"
+binding = "ASSETS"
+
+[vars]
+POSTHOG_HOST = "https://us.i.posthog.com"
+POSTHOG_API_KEY = "phc_Aik6H3pf5P9dPBrWLjd6N3wzsVAD6tJnmmEhFwW8Pzsi"
+GITHUB_REPO = "https://github.com/surendranb/google-search-console-mcp"
+DOCS_URL = "https://github.com/surendranb/google-search-console-mcp#readme"

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "google-search-console-mcp"
-version = "0.10.3"
+version = "0.10.4"
 description = "The GSC 'Intel Engine' for the evolving search landscape. Authoritative visibility governance and AI overview citation analysis via Model Context Protocol."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,7 +42,9 @@ Repository = "https://github.com/surendranb/google-search-console-mcp.git"
 Issues = "https://github.com/surendranb/google-search-console-mcp/issues"
 
 [project.scripts]
+google-search-console-mcp = "gsc_mcp_server:main"
 gsc-mcp = "gsc_mcp_server:main"
+gsc-mcp-server = "gsc_mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]

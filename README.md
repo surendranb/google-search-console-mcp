@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/surendranb/google-search-console-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/surendranb/google-search-console-mcp/actions)
 [![PyPI version](https://img.shields.io/pypi/v/google-search-console-mcp.svg?style=flat-square&color=blue)](https://pypi.org/project/google-search-console-mcp/)
-[![npm version](https://img.shields.io/npm/v/google-search-console-mcp.svg?style=flat-square&color=red)](https://www.npmjs.com/package/google-search-console-mcp)
+[![npm version](https://img.shields.io/npm/v/@surendranb/google-search-console-mcp.svg?style=flat-square&color=red)](https://www.npmjs.com/package/@surendranb/google-search-console-mcp)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/surendranb/google-search-console-mcp/badge)](https://scorecard.dev/viewer/?site=github.com/surendranb/google-search-console-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
@@ -20,7 +20,7 @@ curl -fsSL "https://gsc.builditwithai.xyz/install" | bash
 
 # Or run directly via your preferred runtime:
 uvx google-search-console-mcp
-npx -y google-search-console-mcp
+npx -y @surendranb/google-search-console-mcp
 ```
 
 ---
@@ -66,7 +66,7 @@ claude mcp add google-search-console -- uvx google-search-console-mcp
   "mcpServers": {
     "google-search-console": {
       "command": "npx",
-      "args": ["-y", "google-search-console-mcp"]
+      "args": ["-y", "@surendranb/google-search-console-mcp"]
     }
   }
 }
