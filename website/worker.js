@@ -7,6 +7,11 @@ const GATEWAY_VERSION = "2";
 const SERVER_NAME = "google-search-console";
 const PACKAGE_NAME = "google-search-console-mcp";
 const CLI_CMD = "google-search-console-mcp";
+const DISPLAY_NAME = "Google Search Console";
+const DESCRIPTION = "Surgical search intelligence, indexing status & query analytics for AI";
+const DOCS_URL = "https://gsc.builditwithai.xyz";
+const RUNTIME_PREF = "uvx";
+const DEFAULT_ENV = "{}";
 
 const KNOWN_EVENTS = new Set([
   "mcp_started", "tools_listed", "tool_executed", "session_end",
@@ -227,7 +232,7 @@ export default {
           })
         );
       }
-      return new Response(getInstallerScript(url.hostname, bucketSrc(url.searchParams.get("src")), SERVER_NAME, PACKAGE_NAME, CLI_CMD), {
+      return new Response(getInstallerScript(url.hostname, bucketSrc(url.searchParams.get("src")), SERVER_NAME, PACKAGE_NAME, CLI_CMD, DISPLAY_NAME, DESCRIPTION, DOCS_URL, RUNTIME_PREF, DEFAULT_ENV), {
         headers: {
           "content-type": "text/plain; charset=utf-8",
           "cache-control": "no-cache",
@@ -268,30 +273,82 @@ function parseUserAgent(ua) {
   return { os, arch, clientTool, isAiAgent };
 }
 
-function getInstallerScript(hostname, src, serverName, packageName, cliCmd) {
+function getInstallerScript(hostname, src, serverName, packageName, cliCmd, displayName, description, docsUrl, runtimePref, defaultEnv) {
   const host = hostname || `${serverName}.builditwithai.xyz`;
   const srcValue = src || "installer";
+  const dispName = (displayName && displayName !== "undefined") ? displayName : (serverName ? serverName.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "MCP Server");
+  const desc = (description && description !== "undefined") ? description : "Model Context Protocol Server for AI Agents";
+  const docUrl = (docsUrl && docsUrl !== "undefined") ? docsUrl : `https://${host}`;
+  const rtPref = (runtimePref && runtimePref !== "undefined") ? runtimePref : "uvx";
+  const envValue = (defaultEnv && defaultEnv !== "undefined") ? defaultEnv : "{}";
   return `#!/usr/bin/env bash
-# ${serverName} Universal AI Installer & Telemetry Collector
-MCP_SRC="${srcValue}"
+# ==============================================================================
+# Universal AI Model Context Protocol (MCP) Installer
+# Standard Fleet Architecture (Schema v2)
+# Supports: Claude Desktop, Cursor, Claude Code, Antigravity, VS Code, Zed, Windsurf
+# ==============================================================================
+
+# --- Injected Template Variables (Replaced at edge per server) ---
 MCP_SERVER_NAME="${serverName}"
 MCP_PACKAGE_NAME="${packageName}"
 MCP_CLI_CMD="${cliCmd}"
+MCP_DISPLAY_NAME="${dispName}"
+MCP_DESCRIPTION="${desc}"
+MCP_DOCS_URL="${docUrl}"
+MCP_RUNTIME_PREF="${rtPref}"
+MCP_DEFAULT_ENV="${envValue}"
+if [ "$MCP_DEFAULT_ENV" = "undefined" ] || [ -z "$MCP_DEFAULT_ENV" ]; then
+  MCP_DEFAULT_ENV="{}"
+fi
+MCP_SRC="${srcValue}"
+GATEWAY_HOST="${host}"
 
 set -e
 
-GREEN='\\033[0;32m'
-BLUE='\\033[0;34m'
-YELLOW='\\033[1;33m'
-CYAN='\\033[0;36m'
-RED='\\033[0;31m'
-NC='\\033[0m'
+# --- Terminal Styling ---
+if [ -t 1 ] && [ "\${TERM:-}" != "dumb" ]; then
+  BOLD='\\033[1m'
+  DIM='\\033[2m'
+  GREEN='\\033[0;32m'
+  BLUE='\\033[0;34m'
+  CYAN='\\033[0;36m'
+  YELLOW='\\033[1;33m'
+  RED='\\033[0;31m'
+  MAGENTA='\\033[0;35m'
+  NC='\\033[0m'
+else
+  BOLD=''
+  DIM=''
+  GREEN=''
+  BLUE=''
+  CYAN=''
+  YELLOW=''
+  RED=''
+  MAGENTA=''
+  NC=''
+fi
 
+# --- Mode & Environment Detection ---
 IS_INTERACTIVE=false
 EXEC_MODE="agent_headless"
-if [ -t 0 ] && [ -t 1 ]; then 
-  IS_INTERACTIVE=true
-  EXEC_MODE="human_interactive"
+OUTPUT_JSON=false
+AUTO_ALL=false
+
+# Check CLI arguments
+for arg in "$@"; do
+  case "$arg" in
+    --json) OUTPUT_JSON=true ;;
+    --auto|--all|-y) AUTO_ALL=true ;;
+    --headless) IS_INTERACTIVE=false; EXEC_MODE="agent_headless" ;;
+  esac
+done
+
+# If stdout is a TTY and either stdin is a TTY or /dev/tty is available, enable interactive mode
+if [ -t 1 ] && [ "$OUTPUT_JSON" = false ] && [ "$AUTO_ALL" = false ]; then
+  if [ -t 0 ] || [ -c /dev/tty ]; then
+    IS_INTERACTIVE=true
+    EXEC_MODE="human_interactive"
+  fi
 fi
 
 OS="$(uname -s 2>/dev/null || echo 'Unknown')"
@@ -299,6 +356,7 @@ ARCH="$(uname -m 2>/dev/null || echo 'Unknown')"
 TERM_APP="\${TERM_PROGRAM:-terminal}"
 SHELL_TYPE="$(basename "\${SHELL:-bash}")"
 
+# --- Anonymous Telemetry ID ---
 ANON_ID=""
 if [ -z "\${DO_NOT_TRACK:-}" ] && [ -z "\${DISABLE_TELEMETRY:-}" ] && [ -z "\${NO_TELEMETRY:-}" ]; then
   ID_DIR="$HOME/.\${MCP_SERVER_NAME//-/_}"
@@ -312,54 +370,461 @@ if [ -z "\${DO_NOT_TRACK:-}" ] && [ -z "\${DISABLE_TELEMETRY:-}" ] && [ -z "\${N
   fi
 fi
 
-HARNESSES=()
-CONFIGURED=()
-
-if [ -d "$HOME/Library/Application Support/Claude" ] || [ -d "$HOME/.config/Claude" ]; then HARNESSES+=("claude"); fi
-if [ -d "$HOME/.cursor" ]; then HARNESSES+=("cursor"); fi
-if [ -d "$HOME/.vscode" ] || command -v code &> /dev/null; then HARNESSES+=("vscode"); fi
-
+# --- Runtime Discovery ---
 HAS_UV=false
-if command -v uv &> /dev/null || command -v uvx &> /dev/null; then HAS_UV=true; fi
-PY_VER="$(python3 --version 2>/dev/null || echo 'None')"
+HAS_UVX=false
+HAS_NODE=false
+HAS_NPX=false
+HAS_PYTHON=false
 
-if [ "$IS_INTERACTIVE" = true ]; then
-  echo -e "\${BLUE}=====================================================\${NC}"
-  echo -e "\${BLUE}🚀 \${MCP_SERVER_NAME} Universal AI Installer\${NC}"
-  echo -e "\${BLUE}=====================================================\${NC}"
+if command -v uv &>/dev/null; then HAS_UV=true; fi
+if command -v uvx &>/dev/null; then HAS_UVX=true; fi
+if command -v node &>/dev/null; then HAS_NODE=true; fi
+if command -v npx &>/dev/null; then HAS_NPX=true; fi
+if command -v python3 &>/dev/null; then HAS_PYTHON=true; fi
+
+# Select best execution command and args
+CHOSEN_COMMAND="uvx"
+CHOSEN_ARGS="[\\"\${MCP_PACKAGE_NAME}\\"]"
+
+if [ "$MCP_RUNTIME_PREF" = "npx" ]; then
+  CHOSEN_COMMAND="npx"
+  CHOSEN_ARGS="[\\"-y\\", \\"\${MCP_PACKAGE_NAME}\\"]"
+elif [ "$HAS_UVX" = false ] && [ "$HAS_NPX" = true ]; then
+  # Fallback to npx wrapper if uvx is missing
+  CHOSEN_COMMAND="npx"
+  CHOSEN_ARGS="[\\"-y\\", \\"@surendranb/\${MCP_PACKAGE_NAME}\\"]"
 fi
 
-echo -e "\${YELLOW}➡ Add to your MCP client config under \\"mcpServers\\":\${NC}"
-echo "  \\"\${MCP_SERVER_NAME}\\": { \\"command\\": \\"uvx\\", \\"args\\": [\\"\${MCP_PACKAGE_NAME}\\"] }"
-CONFIGURED+=("mcp_json_snippet")
+# --- JSON Mutation Helper Script (Python/Node) ---
+patch_mcp_config() {
+  local target_file="$1"
+  local srv_name="$2"
+  local srv_cmd="$3"
+  local srv_args="$4"
+  local srv_env="$5"
+  local target_type="\${6:-mcpServers}"
 
+  if [ "$HAS_PYTHON" = true ]; then
+    python3 - <<PYEOF
+import json, sys, os, shutil, time
+
+target_path = "$target_file"
+srv_name = "$srv_name"
+srv_cmd = "$srv_cmd"
+srv_args = json.loads('''$srv_args''')
+srv_env = json.loads('''$srv_env''')
+target_type = "$target_type"
+
+# Expand user path
+target_path = os.path.expanduser(target_path)
+parent_dir = os.path.dirname(target_path)
+
+if parent_dir and not os.path.exists(parent_dir):
+    try:
+        os.makedirs(parent_dir, exist_ok=True)
+    except Exception as e:
+        print(f"ERROR: Cannot create directory {parent_dir}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+data = {}
+if os.path.exists(target_path):
+    # Create timestamped backup
+    bak_path = f"{target_path}.bak.{int(time.time())}"
+    try:
+        shutil.copy2(target_path, bak_path)
+    except Exception as e:
+        print(f"WARN: Could not create backup: {e}", file=sys.stderr)
+    
+    try:
+        with open(target_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if content:
+                data = json.loads(content)
+    except Exception as e:
+        print(f"ERROR: Failed to parse existing JSON in {target_path}: {e}", file=sys.stderr)
+        sys.exit(2)
+
+# Ensure container structure exists
+if target_type == "context_servers": # Zed format
+    if "context_servers" not in data or not isinstance(data["context_servers"], dict):
+        data["context_servers"] = {}
+    container = data["context_servers"]
+    container[srv_name] = {
+        "command": srv_cmd,
+        "args": srv_args
+    }
+    if srv_env:
+        container[srv_name]["env"] = srv_env
+elif target_type == "continue": # Continue.dev format
+    if "mcpServers" not in data or not isinstance(data["mcpServers"], list):
+        data["mcpServers"] = []
+    # Replace existing or append
+    data["mcpServers"] = [s for s in data["mcpServers"] if s.get("name") != srv_name]
+    entry = {"name": srv_name, "command": srv_cmd, "args": srv_args}
+    if srv_env:
+        entry["env"] = srv_env
+    data["mcpServers"].append(entry)
+else: # Standard mcpServers dict format (Cursor, Claude Desktop, Antigravity, VS Code)
+    if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
+        data["mcpServers"] = {}
+    
+    existing_env = {}
+    if srv_name in data["mcpServers"] and isinstance(data["mcpServers"][srv_name], dict):
+        existing_env = data["mcpServers"][srv_name].get("env", {})
+    
+    merged_env = {**existing_env, **srv_env}
+    
+    server_block = {
+        "command": srv_cmd,
+        "args": srv_args
+    }
+    if merged_env:
+        server_block["env"] = merged_env
+        
+    data["mcpServers"][srv_name] = server_block
+
+# Atomic write
+tmp_path = f"{target_path}.tmp.{os.getpid()}"
+try:
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+        f.write('\\n')
+    os.replace(tmp_path, target_path)
+except Exception as e:
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+    print(f"ERROR: Failed writing {target_path}: {e}", file=sys.stderr)
+    sys.exit(1)
+
+print("SUCCESS")
+PYEOF
+  elif [ "$HAS_NODE" = true ]; then
+    node - <<JSEOF
+const fs = require('fs');
+const path = require('path');
+
+const targetPath = path.resolve("$target_file".replace(/^~(?=$|\\/|\\\\\\\\)/, process.env.HOME || ''));
+const srvName = "$srv_name";
+const srvCmd = "$srv_cmd";
+const srvArgs = JSON.parse('$srv_args');
+const srvEnv = JSON.parse('$srv_env');
+const targetType = "$target_type";
+
+const parentDir = path.dirname(targetPath);
+if (!fs.existsSync(parentDir)) {
+  fs.mkdirSync(parentDir, { recursive: true });
+}
+
+let data = {};
+if (fs.existsSync(targetPath)) {
+  const bakPath = targetPath + '.bak.' + Math.floor(Date.now() / 1000);
+  try { fs.copyFileSync(targetPath, bakPath); } catch (e) {}
+  try {
+    const raw = fs.readFileSync(targetPath, 'utf8').trim();
+    if (raw) data = JSON.parse(raw);
+  } catch (e) {
+    console.error('ERROR: Failed parsing JSON:', e.message);
+    process.exit(2);
+  }
+}
+
+if (!data.mcpServers || typeof data.mcpServers !== 'object') data.mcpServers = {};
+const existingEnv = (data.mcpServers[srvName] && data.mcpServers[srvName].env) || {};
+const mergedEnv = Object.assign({}, existingEnv, srvEnv);
+
+const block = { command: srvCmd, args: srvArgs };
+if (Object.keys(mergedEnv).length > 0) block.env = mergedEnv;
+data.mcpServers[srvName] = block;
+
+const tmpPath = targetPath + '.tmp.' + process.pid;
+fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2) + '\\n', 'utf8');
+fs.renameSync(tmpPath, targetPath);
+console.log("SUCCESS");
+JSEOF
+  else
+    echo "ERROR: Neither python3 nor node found to process JSON safely." >&2
+    return 1
+  fi
+}
+
+# --- Harness Locations & Detection ---
+DETECTED_NAMES=()
+DETECTED_PATHS=()
+DETECTED_TYPES=()
+
+add_harness() {
+  local name="$1"
+  local path="$2"
+  local type="\${3:-mcpServers}"
+  local dir_check="$4"
+
+  local expanded_path="\${path/#\\~/$HOME}"
+  local expanded_dir="\${dir_check/#\\~/$HOME}"
+
+  # If file exists OR parent app directory exists
+  if [ -f "$expanded_path" ] || ([ -n "$dir_check" ] && [ -d "$expanded_dir" ]); then
+    DETECTED_NAMES+=("$name")
+    DETECTED_PATHS+=("$path")
+    DETECTED_TYPES+=("$type")
+  fi
+}
+
+# 1. Claude Desktop
+if [ "$OS" = "Darwin" ]; then
+  add_harness "Claude Desktop" "~/Library/Application Support/Claude/claude_desktop_config.json" "mcpServers" "~/Library/Application Support/Claude"
+elif [ "$OS" = "Linux" ]; then
+  add_harness "Claude Desktop" "~/.config/Claude/claude_desktop_config.json" "mcpServers" "~/.config/Claude"
+fi
+
+# 2. Cursor (Global & Workspace)
+add_harness "Cursor (Global)" "~/.cursor/mcp.json" "mcpServers" "~/.cursor"
+if [ -d "$PWD/.cursor" ]; then
+  add_harness "Cursor (Workspace)" "$PWD/.cursor/mcp.json" "mcpServers" "$PWD/.cursor"
+fi
+
+# 3. Claude Code CLI
+if command -v claude &>/dev/null || [ -f "$HOME/.claude.json" ]; then
+  add_harness "Claude Code CLI" "~/.claude.json" "mcpServers" ""
+fi
+
+# 4. Google Antigravity
+add_harness "Google Antigravity" "~/.gemini/antigravity/mcp_servers.json" "mcpServers" "~/.gemini/antigravity"
+
+# 5. VS Code Extensions (Cline, Roo Code, Continue)
+if [ "$OS" = "Darwin" ]; then
+  add_harness "VS Code (Cline)" "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json" "mcpServers" "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev"
+  add_harness "VS Code (Roo Code)" "~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json" "mcpServers" "~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline"
+elif [ "$OS" = "Linux" ]; then
+  add_harness "VS Code (Cline)" "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json" "mcpServers" "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev"
+  add_harness "VS Code (Roo Code)" "~/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json" "mcpServers" "~/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline"
+fi
+add_harness "Continue.dev" "~/.continue/config.json" "continue" "~/.continue"
+
+# 6. Windsurf & Zed
+add_harness "Windsurf" "~/.codeium/windsurf/mcp_config.json" "mcpServers" "~/.codeium/windsurf"
+add_harness "Zed Editor" "~/.config/zed/settings.json" "context_servers" "~/.config/zed"
+
+CONFIGURED_HARNESSES=()
+CONFIG_FILES_TOUCHED=()
+
+# ==============================================================================
+# EXECUTION FLOW: HUMAN INTERACTIVE MODE
+# ==============================================================================
+if [ "$IS_INTERACTIVE" = true ]; then
+  # Re-open stdin from /dev/tty for interactive input when piped via curl | bash
+  if [ ! -t 0 ] && [ -c /dev/tty ]; then
+    exec < /dev/tty 2>/dev/null || true
+  fi
+
+  clear 2>/dev/null || true
+  echo -e "\${BLUE}\${BOLD}┌──────────────────────────────────────────────────────────────┐\${NC}"
+  echo -e "\${BLUE}\${BOLD}│\${NC}  \${CYAN}\${BOLD}⚡ \${MCP_DISPLAY_NAME} Universal AI Installer\${NC}"
+  echo -e "\${BLUE}\${BOLD}│\${NC}  \${DIM}\${MCP_DESCRIPTION}\${NC}"
+  echo -e "\${BLUE}\${BOLD}└──────────────────────────────────────────────────────────────┘\${NC}"
+  echo ""
+  echo -e "  \${GREEN}✔\${NC} System  : \${BOLD}\${OS} (\${ARCH})\${NC}"
+  if [ "$HAS_UVX" = true ]; then
+    echo -e "  \${GREEN}✔\${NC} Runtime : \${BOLD}uvx detected\${NC} (\${GREEN}Recommended\${NC})"
+  elif [ "$HAS_NPX" = true ]; then
+    echo -e "  \${GREEN}✔\${NC} Runtime : \${BOLD}npx detected\${NC}"
+  else
+    echo -e "  \${YELLOW}⚠\${NC} Runtime : Neither uvx nor npx detected in PATH."
+  fi
+  echo ""
+  echo -e "  \${BOLD}🔍 Scanning installed MCP harnesses on your system...\${NC}"
+  echo -e "  \${DIM}──────────────────────────────────────────────────────────────\${NC}"
+
+  if [ \${#DETECTED_NAMES[@]} -eq 0 ]; then
+    echo -e "  \${YELLOW}ℹ No active client harness configurations detected automatically.\${NC}"
+  else
+    for i in "\${!DETECTED_NAMES[@]}"; do
+      echo -e "  \${GREEN}✔\${NC} [Found] \${BOLD}\${DETECTED_NAMES[$i]}\${NC} \${DIM}(\${DETECTED_PATHS[$i]})\${NC}"
+    done
+  fi
+  echo -e "  \${DIM}──────────────────────────────────────────────────────────────\${NC}"
+  echo ""
+
+  # Prompt Menu
+  echo -e "  \${BOLD}Where would you like to install \${CYAN}\${MCP_SERVER_NAME}\${NC}\${BOLD}?\${NC}"
+  echo ""
+  if [ \${#DETECTED_NAMES[@]} -gt 0 ]; then
+    echo -e "  \${CYAN}[1]\${NC} \${BOLD}All detected harnesses\${NC} (\${GREEN}Recommended\${NC})"
+    echo -e "  \${CYAN}[2]\${NC} Select specific harnesses"
+    echo -e "  \${CYAN}[3]\${NC} Specify a custom config file path"
+    echo -e "  \${CYAN}[4]\${NC} Print configuration snippets only (Manual setup)"
+    echo ""
+    printf "  Select an option [1-4] (Default: 1): "
+    read -r user_choice || user_choice="1"
+    [ -z "$user_choice" ] && user_choice="1"
+  else
+    echo -e "  \${CYAN}[1]\${NC} Specify a custom config file path"
+    echo -e "  \${CYAN}[2]\${NC} Print configuration snippets only (Manual setup)"
+    echo ""
+    printf "  Select an option [1-2] (Default: 2): "
+    read -r user_choice || user_choice="2"
+    if [ "$user_choice" = "1" ]; then user_choice="3"; else user_choice="4"; fi
+  fi
+
+  echo ""
+
+  TARGETS_TO_CONFIGURE=()
+  TARGET_PATHS=()
+  TARGET_TYPES=()
+
+  case "$user_choice" in
+    1)
+      for i in "\${!DETECTED_NAMES[@]}"; do
+        TARGETS_TO_CONFIGURE+=("\${DETECTED_NAMES[$i]}")
+        TARGET_PATHS+=("\${DETECTED_PATHS[$i]}")
+        TARGET_TYPES+=("\${DETECTED_TYPES[$i]}")
+      done
+      ;;
+    2)
+      echo -e "  \${BOLD}Select harnesses to configure (e.g. 1,3 or 'all'):\${NC}"
+      for i in "\${!DETECTED_NAMES[@]}"; do
+        idx=$((i + 1))
+        echo -e "    \${CYAN}[$idx]\${NC} \${DETECTED_NAMES[$i]}"
+      done
+      echo ""
+      printf "  Enter numbers: "
+      read -r selections
+      if [ "$selections" = "all" ]; then
+        for i in "\${!DETECTED_NAMES[@]}"; do
+          TARGETS_TO_CONFIGURE+=("\${DETECTED_NAMES[$i]}")
+          TARGET_PATHS+=("\${DETECTED_PATHS[$i]}")
+          TARGET_TYPES+=("\${DETECTED_TYPES[$i]}")
+        done
+      else
+        IFS=',' read -ra ADDR <<< "$selections"
+        for s in "\${ADDR[@]}"; do
+          clean_idx="$(echo "$s" | tr -d ' ')"
+          if [ -n "$clean_idx" ] && [ "$clean_idx" -ge 1 ] && [ "$clean_idx" -le "\${#DETECTED_NAMES[@]}" ]; then
+            actual_idx=$((clean_idx - 1))
+            TARGETS_TO_CONFIGURE+=("\${DETECTED_NAMES[$actual_idx]}")
+            TARGET_PATHS+=("\${DETECTED_PATHS[$actual_idx]}")
+            TARGET_TYPES+=("\${DETECTED_TYPES[$actual_idx]}")
+          fi
+        done
+      fi
+      ;;
+    3)
+      printf "  📁 Enter absolute or relative path to your config file: "
+      read -r custom_path
+      if [ -n "$custom_path" ]; then
+        TARGETS_TO_CONFIGURE+=("Custom Config")
+        TARGET_PATHS+=("$custom_path")
+        TARGET_TYPES+=("mcpServers")
+      fi
+      ;;
+    *)
+      # Manual snippet display handled below
+      ;;
+  esac
+
+  # Apply mutations
+  if [ \${#TARGETS_TO_CONFIGURE[@]} -gt 0 ]; then
+    echo -e "  \${BOLD}⚙️  Configuring MCP harnesses...\${NC}"
+    for i in "\${!TARGETS_TO_CONFIGURE[@]}"; do
+      tname="\${TARGETS_TO_CONFIGURE[$i]}"
+      tpath="\${TARGET_PATHS[$i]}"
+      ttype="\${TARGET_TYPES[$i]}"
+      expanded_path="\${tpath/#\\~/$HOME}"
+
+      printf "  %-30s " "• $tname..."
+      res="$(patch_mcp_config "$expanded_path" "$MCP_SERVER_NAME" "$CHOSEN_COMMAND" "$CHOSEN_ARGS" "$MCP_DEFAULT_ENV" "$ttype" 2>&1 || true)"
+      if [ "$res" = "SUCCESS" ]; then
+        echo -e "\${GREEN}[OK]\${NC}"
+        CONFIGURED_HARNESSES+=("$tname")
+        CONFIG_FILES_TOUCHED+=("$expanded_path")
+      else
+        echo -e "\${RED}[FAILED]\${NC} \${DIM}($res)\${NC}"
+      fi
+    done
+    echo ""
+  fi
+
+  # Completion banner
+  echo -e "  \${DIM}──────────────────────────────────────────────────────────────\${NC}"
+  echo -e "  \${GREEN}\${BOLD}🎉 Setup Complete!\${NC}"
+  echo -e "  \${DIM}──────────────────────────────────────────────────────────────\${NC}"
+  echo ""
+  echo -e "  \${BOLD}Next Steps:\${NC}"
+  echo -e "  • \${BOLD}Claude Desktop\${NC} : Restart Claude Desktop app."
+  echo -e "  • \${BOLD}Cursor\${NC}         : Open Settings -> Features -> MCP."
+  echo -e "  • \${BOLD}Claude Code\${NC}    : Run \${CYAN}claude\${NC} in your project."
+  echo ""
+  echo -e "  📖 Documentation: \${CYAN}\${MCP_DOCS_URL}\${NC}"
+  echo ""
+
+# ==============================================================================
+# EXECUTION FLOW: AGENT / HEADLESS / JSON MODE
+# ==============================================================================
+else
+  # In headless mode: auto-configure all detected harnesses safely
+  for i in "\${!DETECTED_NAMES[@]}"; do
+    tname="\${DETECTED_NAMES[$i]}"
+    tpath="\${DETECTED_PATHS[$i]}"
+    ttype="\${DETECTED_TYPES[$i]}"
+    expanded_path="\${tpath/#\\~/$HOME}"
+
+    res="$(patch_mcp_config "$expanded_path" "$MCP_SERVER_NAME" "$CHOSEN_COMMAND" "$CHOSEN_ARGS" "$MCP_DEFAULT_ENV" "$ttype" 2>&1 || true)"
+    if [ "$res" = "SUCCESS" ]; then
+      CONFIGURED_HARNESSES+=("$tname")
+      CONFIG_FILES_TOUCHED+=("$expanded_path")
+    fi
+  done
+
+  # If no harnesses were configured, note manual fallback
+  if [ \${#CONFIGURED_HARNESSES[@]} -eq 0 ]; then
+    CONFIGURED_HARNESSES+=("mcp_json_snippet")
+  fi
+
+  # Output machine-readable JSON if requested or in agent mode
+  cat <<JSONEOF
+{
+  "status": "success",
+  "server": "\${MCP_SERVER_NAME}",
+  "package": "\${MCP_PACKAGE_NAME}",
+  "runtime": "\${CHOSEN_COMMAND}",
+  "execution_mode": "\${EXEC_MODE}",
+  "detected_harnesses": [$(printf '"%s",' "\${DETECTED_NAMES[@]}" 2>/dev/null | sed 's/,$//')],
+  "configured_harnesses": [$(printf '"%s",' "\${CONFIGURED_HARNESSES[@]}" 2>/dev/null | sed 's/,$//')],
+  "config_files_modified": [$(printf '"%s",' "\${CONFIG_FILES_TOUCHED[@]}" 2>/dev/null | sed 's/,$//')],
+  "mcp_server_config": {
+    "command": "\${CHOSEN_COMMAND}",
+    "args": \${CHOSEN_ARGS},
+    "env": \${MCP_DEFAULT_ENV}
+  },
+  "cli_command": "claude mcp add \${MCP_SERVER_NAME} -- \${CHOSEN_COMMAND} \${MCP_PACKAGE_NAME}"
+}
+JSONEOF
+fi
+
+# ==============================================================================
+# TELEMETRY DISPATCH (Background)
+# ==============================================================================
 if [ -n "$ANON_ID" ]; then
   TELEMETRY_PAYLOAD=$(cat <<JSONEOF
 {
   "anonymous_id": "$ANON_ID",
   "src": "$MCP_SRC",
   "execution_mode": "$EXEC_MODE",
-  "harnesses_detected": [$(printf '"%s",' "\${HARNESSES[@]}" 2>/dev/null | sed 's/,$//')],
-  "configured_harnesses": [$(printf '"%s",' "\${CONFIGURED[@]}" 2>/dev/null | sed 's/,$//')],
+  "harnesses_detected": [$(printf '"%s",' "\${DETECTED_NAMES[@]}" 2>/dev/null | sed 's/,$//')],
+  "configured_harnesses": [$(printf '"%s",' "\${CONFIGURED_HARNESSES[@]}" 2>/dev/null | sed 's/,$//')],
   "terminal_app": "$TERM_APP",
   "shell_type": "$SHELL_TYPE",
   "os_name": "$OS",
   "arch": "$ARCH",
-  "python_version": "$PY_VER",
   "has_uv": $HAS_UV,
+  "has_npx": $HAS_NPX,
   "install_outcome": "success"
 }
 JSONEOF
 )
-  curl -s -m 5 -X POST "https://${host}/telemetry" \\
+  curl -s -m 4 -X POST "https://\${GATEWAY_HOST}/telemetry" \\
     -H "Content-Type: application/json" \\
-    -d "$TELEMETRY_PAYLOAD" &> /dev/null || true
-fi
-
-if [ "$IS_INTERACTIVE" = true ]; then
-  echo -e "\${GREEN}🎉 Setup Complete!\${NC}"
-else
-  echo '{"status": "success", "mode": "agent_headless", "ready": true}'
+    -d "$TELEMETRY_PAYLOAD" &>/dev/null || true
 fi
 `;
 }
