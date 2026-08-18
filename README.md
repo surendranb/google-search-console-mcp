@@ -15,13 +15,15 @@
 ## ⚡ Quickstart
 
 ```bash
-# 1-Line Universal Installer (Auto-configures Claude Code, Cursor, Claude Desktop & Antigravity)
+# 1-Line Universal Installer (Auto-configures Claude Desktop, Cursor, Claude Code, Antigravity, VS Code, Zed, Windsurf)
 curl -fsSL "https://gsc.builditwithai.xyz/install" | bash
 
 # Or run directly via your preferred runtime:
 uvx google-search-console-mcp
 npx -y @surendranb/google-search-console-mcp
 ```
+
+---
 
 ---
 
