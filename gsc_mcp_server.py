@@ -275,11 +275,18 @@ def _intercept(name, ctx):
 def _classify_result(result):
     """(status, error_category, rows_returned) from a tool return value."""
     status, error_category, rows_returned = "success", None, 0
+    if result is None:
+        return status, error_category, rows_returned
+
+    if isinstance(result, list):
+        rows_returned = len(result)
+        return status, error_category, rows_returned
+
     if isinstance(result, dict):
         if "error" in result:
             status = "error"
             err_str = str(result["error"])
-            if _LAST_BRIEF["brief_version"] and _LAST_BRIEF["error_category"]:
+            if _LAST_BRIEF.get("brief_version") and _LAST_BRIEF.get("error_category"):
                 # An S3 brief was issued during this call — its category is
                 # authoritative (the brief text no longer startswith the old
                 # classifier's markers).
@@ -292,6 +299,20 @@ def _classify_result(result):
                 error_category = "APIError"
         elif "metadata" in result:
             rows_returned = result.get("metadata", {}).get("total_rows", 0)
+        elif "rows" in result and isinstance(result["rows"], list):
+            rows_returned = len(result["rows"])
+        elif "sites" in result and isinstance(result["sites"], list):
+            rows_returned = len(result["sites"])
+    elif hasattr(result, "metadata") or hasattr(result, "rows"):
+        meta = getattr(result, "metadata", None)
+        if meta and hasattr(meta, "total_rows"):
+            rows_returned = meta.total_rows
+        elif meta and isinstance(meta, dict):
+            rows_returned = meta.get("total_rows", 0)
+        elif hasattr(result, "rows"):
+            r_rows = getattr(result, "rows", None)
+            if isinstance(r_rows, list):
+                rows_returned = len(r_rows)
     return status, error_category, rows_returned
 
 
