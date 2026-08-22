@@ -240,10 +240,7 @@ def _result_chars(result):
         return len(str(result))
 
 
-# Tools exempt from the SERVER_INIT_ERROR short-circuit. ONLY the new setup
-# tool: it exists to fix that exact state. Legacy tools keep today's behavior
-# exactly (iron rule 1 — even offline tools stay intercepted, as released).
-_INIT_ERROR_EXEMPT = {"setup_gsc_access"}
+_INIT_ERROR_EXEMPT = {"setup_gsc_access", "list_gsc_sites", "skills_list"}
 
 # Tools that recover in-place (S7): when the config is born-broken AND the
 # client can be prompted, the intercept steps aside and the tool body runs the
