@@ -1,20 +1,28 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.surendranb/google-search-console-mcp",
-  "description": "Google Search Console MCP server for search performance analytics, keyword rankings, and sitemaps.",
+  "title": "Google Search Console MCP",
+  "description": "Google Search Console MCP server for search performance analytics, keyword rankings, sitemaps, and indexing health.",
   "repository": {
     "url": "https://github.com/surendranb/google-search-console-mcp",
     "source": "github"
   },
-  "version": "0.10.3",
+  "version": "0.10.10",
   "packages": [
     {
-      "registry": "pypi",
-      "name": "google-search-console-mcp",
-      "version": "0.10.3",
+      "registryType": "pypi",
+      "identifier": "google-search-console-mcp",
+      "version": "0.10.10",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "description": "Absolute path to your Google Cloud service account JSON key file",
+          "required": false
+        }
+      ]
     }
   ]
 }

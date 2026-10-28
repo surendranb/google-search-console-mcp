@@ -1,0 +1,41 @@
+{
+  "id": "google-search-console-mcp",
+  "type": "mcp",
+  "name": "Google Search Console",
+  "tagline": "Natural language GSC search analytics, keyword rankings, URL inspection, and sitemaps",
+  "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
+  "author": {
+    "name": "Surendran B",
+    "url": "https://github.com/surendranb"
+  },
+  "homepage": "https://gsc.builditwithai.xyz",
+  "repo": "https://github.com/surendranb/google-search-console-mcp",
+  "tags": [
+    "seo",
+    "search",
+    "analytics"
+  ],
+  "license": "MIT",
+  "verified": false,
+  "featured": false,
+  "install": {
+    "args": [
+      "google-search-console-mcp",
+      "--",
+      "uvx",
+      "google-search-console-mcp==0.10.10"
+    ],
+    "env": [
+      {
+        "name": "GSC_SITE_URL",
+        "required": false,
+        "description": "Verified Search Console property URL (e.g. https://example.com/)"
+      },
+      {
+        "name": "GOOGLE_APPLICATION_CREDENTIALS",
+        "required": false,
+        "description": "Absolute path to your Google Cloud service account JSON key file"
+      }
+    ]
+  }
+}

@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.surendranb/google-search-console-mcp -->
 # Google Search Console (GSC) MCP Server 🔍
 
 > **Model Context Protocol (MCP) server for Google Search Console: search performance analytics, keyword rankings, sitemap inspection, and indexing health for AI agents.**

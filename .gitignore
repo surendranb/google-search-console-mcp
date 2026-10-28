@@ -69,6 +69,14 @@ venv.bak/
 !gsc_filters.json
 !claude-confing-template.json
 !npm/package.json
+!server.json
+!gemini-extension.json
+!.cursor/mcp.json
+!.cursor-plugin/plugin.json
+!.devin-plugin/plugin.json
+!.claude-plugin/plugin.json
+!.claude-plugin/marketplace.json
+!marketplace/cline/entry.json
 *.xlsx
 *.xls
 *.db
