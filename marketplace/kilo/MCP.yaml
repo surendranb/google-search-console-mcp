@@ -1,0 +1,21 @@
+id: google-search-console-mcp
+name: Google Search Console
+description: Google Search Console search performance analytics, keyword rankings, URL inspection, and sitemaps for AI agents
+category: analytics
+author: Surendran B
+repository: https://github.com/surendranb/google-search-console-mcp
+homepage: https://gsc.builditwithai.xyz
+license: MIT
+runtime:
+  type: uvx
+  package: google-search-console-mcp==0.10.10
+  command: uvx
+  args:
+    - google-search-console-mcp==0.10.10
+environmentVariables:
+  - name: GSC_SITE_URL
+    description: Verified Search Console property URL (e.g. https://example.com/)
+    required: false
+  - name: GOOGLE_APPLICATION_CREDENTIALS
+    description: Absolute path to your Google Cloud service account JSON key file
+    required: false

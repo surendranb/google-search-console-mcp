@@ -1,6 +1,6 @@
 {
   "name": "@surendranb/google-search-console-mcp",
-  "version": "0.10.9",
+  "version": "0.10.10",
   "description": "Model Context Protocol (MCP) server for Google Search Console (GSC) inspection, search performance, and sitemaps via NPX. Spawns the Python package through uvx with full stdio passthrough.",
   "main": "bin/index.js",
   "bin": {

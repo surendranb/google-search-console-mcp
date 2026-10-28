@@ -1,0 +1,21 @@
+{
+  "name": "google-search-console-mcp",
+  "version": "0.10.10",
+  "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps",
+  "author": {
+    "name": "Surendran B",
+    "url": "https://github.com/surendranb"
+  },
+  "mcpServers": {
+    "google-search-console-mcp": {
+      "command": "uvx",
+      "args": [
+        "google-search-console-mcp==0.10.10"
+      ],
+      "env": {
+        "GSC_SITE_URL": "${GSC_SITE_URL}",
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}"
+      }
+    }
+  }
+}
