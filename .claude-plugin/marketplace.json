@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
-    "version": "0.11.1"
+    "version": "0.11.2"
   },
   "plugins": [
     {
