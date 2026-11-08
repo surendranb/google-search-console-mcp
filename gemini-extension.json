@@ -1,6 +1,6 @@
 {
   "name": "google-search-console-mcp",
-  "version": "0.10.10",
+  "version": "0.11.0",
   "description": "Google Search Console MCP server for search performance analytics, keyword rankings, URL inspection, and sitemaps.",
   "author": "Surendran B",
   "homepage": "https://gsc.builditwithai.xyz",
@@ -10,7 +10,7 @@
     "google-search-console-mcp": {
       "command": "uvx",
       "args": [
-        "google-search-console-mcp==0.10.10"
+        "google-search-console-mcp==0.11.0"
       ]
     }
   },
