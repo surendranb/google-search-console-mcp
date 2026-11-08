@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>Check the publication status and latest available date of Google Search Console data for the verified domain property using get_data_status. What is the latest date published?</question>
+    <answer>latest_available_date</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>A user manages 'example.com' as a Domain property in Search Console ('sc-domain:example.com'). If the agent queries get_search_analytics with site_url='example.com', what normalized property format does the server resolve against?</question>
+    <answer>sc-domain:example.com</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>When calling get_search_analytics, if an agent wants to inspect preliminary, non-finalized search performance signals from the last 24 to 48 hours instead of waiting 72 hours, what parameter and value should it pass?</question>
+    <answer>data_state='all'</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Use inspect_url to check index coverage for 'https://example.com/pricing'. If Google has crawled and indexed the page successfully, what is the expected indexingState returned?</question>
+    <answer>INDEXING_ALLOWED</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Compare organic search performance between October 2026 and September 2026 using compare_performance for 'query'. If query 'ai agent mcp' grew from 80 clicks in September to 100 clicks in October, what is the calculated clicks_delta and clicks_pct_change?</question>
+    <answer>clicks_delta=20, clicks_pct_change=25.0</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>To identify secondary keyword striking-distance opportunities in Google Search Console, which average position range (between 11 and 20) represents queries ranking on page 2?</question>
+    <answer>11.0 to 20.0</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>When get_search_analytics is invoked with summary_only=True, which high-signal aggregated metrics are returned without generating row-level token bloat?</question>
+    <answer>total_clicks, total_impressions, avg_ctr, row_count</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>If get_search_analytics is called without explicit start_date and end_date, what is the default end_date calculation to absorb Google's 72-hour batch ingestion lag?</question>
+    <answer>3 days ago</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which tool in the GSC MCP inspects detected structured data, rich result types, and mobile usability for an individual page?</question>
+    <answer>inspect_url</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>When a caller hits an IAM permission error (Google Service Account not added to GSC property), what structured guidance prefix does the server emit to tell the agent to ask the human?</answer>
+    <answer>[SETUP BLOCKED]</answer>
+  </qa_pair>
+</evaluation>

@@ -660,6 +660,43 @@ def reinitialize():
         SERVER_INIT_ERROR_BRIEF_VERSION = None
         return False, "setup", err
 
+
+def _resolve_site_url(site_url: str | None = None) -> str:
+    """Resolve and normalize site_url, falling back to GSC_SITE_URL or single verified site."""
+    target = (site_url or GSC_SITE_URL or "").strip()
+    if not target:
+        try:
+            service = get_gsc_service()
+            sites_resp = service.sites().list().execute()
+            entries = sites_resp.get("siteEntry", [])
+            if len(entries) == 1:
+                return entries[0].get("siteUrl", "")
+        except Exception:
+            pass
+        return ""
+
+    if target.startswith(("http://", "https://", "sc-domain:")):
+        return target
+
+    # Check verified sites for matching sc-domain: or https://
+    clean = target.rstrip("/")
+    try:
+        service = get_gsc_service()
+        sites_resp = service.sites().list().execute()
+        entries = [s.get("siteUrl", "") for s in sites_resp.get("siteEntry", [])]
+        sc_candidate = f"sc-domain:{clean}"
+        if sc_candidate in entries:
+            return sc_candidate
+        for e in entries:
+            if e.rstrip("/") in (f"https://{clean}", f"http://{clean}"):
+                return e
+    except Exception:
+        pass
+
+    # Default naked domain to sc-domain:
+    return f"sc-domain:{clean}"
+
+
 # Load dimensions and metrics from JSON files
 def load_gsc_dimensions():
     """Load available GSC dimensions from JSON file"""
@@ -886,6 +923,9 @@ def _get_search_analytics_impl(
     start_row: int = 0,
     summary_only: bool = False,
     intent: str = None,
+    site_url: str | None = None,
+    data_state: str = "final",
+    fresh_data: bool = False,
     ctx: Context = None
 ):
     """The original get_search_analytics body, unchanged except the S3 brief
@@ -966,6 +1006,10 @@ def _get_search_analytics_impl(
             return {"error": f"Invalid search_type '{search_type}'. Valid types: {valid_search_types}"}
         search_type = canonical_type
         
+        target_site = _resolve_site_url(site_url)
+        if not target_site:
+            return {"error": "No site_url provided and no default GSC_SITE_URL configured."}
+
         # Build the request
         request = {
             'startDate': start_date,
@@ -976,6 +1020,12 @@ def _get_search_analytics_impl(
             'startRow': start_row
         }
         
+        # S1: dataState support (fresh preliminary data vs finalized)
+        if fresh_data or str(data_state or "").strip().lower() == "all":
+            request['dataState'] = 'all'
+        else:
+            request['dataState'] = 'final'
+
         if request_filters:
             request['dimensionFilterGroups'] = [{
                 'filters': request_filters
@@ -984,7 +1034,7 @@ def _get_search_analytics_impl(
         # Execute the request
         service = get_gsc_service()
         response = service.searchanalytics().query(
-            siteUrl=GSC_SITE_URL,
+            siteUrl=target_site,
             body=request
         ).execute()
         
@@ -993,6 +1043,7 @@ def _get_search_analytics_impl(
         if summary_only:
             return {
                 "summary": {
+                    "site_url": target_site,
                     "total_clicks": sum(r.get('clicks', 0) for r in rows),
                     "total_impressions": sum(r.get('impressions', 0) for r in rows),
                     "avg_ctr": round((sum(r.get('clicks', 0) for r in rows) / sum(r.get('impressions', 0) for r in rows)) * 100, 2) if sum(r.get('impressions', 0) for r in rows) > 0 else 0,
@@ -1003,11 +1054,12 @@ def _get_search_analytics_impl(
         # Format the response
         result = {
             'metadata': {
-                'site_url': GSC_SITE_URL,
+                'site_url': target_site,
                 'start_date': start_date,
                 'end_date': end_date,
                 'dimensions': dimensions,
                 'search_type': search_type,
+                'data_state': request['dataState'],
                 'total_rows': len(rows),
                 'row_limit': row_limit,
                 'start_row': start_row
@@ -1057,6 +1109,9 @@ async def get_search_analytics(
     start_row: int = 0,
     summary_only: bool = False,
     intent: str = None,
+    site_url: str | None = None,
+    data_state: str = "final",
+    fresh_data: bool = False,
     ctx: Context = None
 ) -> SearchAnalyticsResult | str:
     """
@@ -1071,14 +1126,14 @@ async def get_search_analytics(
         row_limit: Maximum number of rows to return (max 25000)
         start_row: Starting row for pagination (0-based)
         summary_only: If True, returns only aggregated totals (Token Efficient)
-        intent: Short plain-English description of what the user is trying to learn/accomplish. E.g. "which queries drive clicks to the pricing page", "mobile vs desktop performance last month".
+        intent: Short plain-English description of what the user is trying to learn/accomplish.
+        site_url: Target site URL (e.g. 'sc-domain:example.com' or 'https://example.com/'). If omitted, uses configured site.
+        data_state: 'final' (default, verified data ~72h delay) or 'all' (includes preliminary data from last 24-48h).
+        fresh_data: If True, shorthand for data_state='all' to inspect recent preliminary search data.
 
     Returns:
         Dictionary containing search analytics data with clicks, impressions, ctr, and position metrics.
     """
-    # S7: setup recovery at the point of friction. Reached only when the
-    # config is born-broken AND the client declared elicitation support (the
-    # instrument intercept handles everyone else exactly as before).
     if SERVER_INIT_ERROR and ctx is not None and request_supports_elicitation(ctx):
         try:
             from gsc_setup_flow import run_inline_recovery
@@ -1086,8 +1141,6 @@ async def get_search_analytics(
             if not recovered:
                 return {"error": message}
         except Exception:
-            # Recovery must never make a failing call worse: fall back to the
-            # guided brief exactly as a non-elicitation client would get.
             if SERVER_INIT_ERROR:
                 return f"Configuration Error: {SERVER_INIT_ERROR}. Please instruct the user to fix their setup."
 
@@ -1095,7 +1148,9 @@ async def get_search_analytics(
         _get_search_analytics_impl,
         dimensions=dimensions, start_date=start_date, end_date=end_date,
         filters=filters, search_type=search_type, row_limit=row_limit,
-        start_row=start_row, summary_only=summary_only, intent=intent, ctx=ctx,
+        start_row=start_row, summary_only=summary_only, intent=intent,
+        site_url=site_url, data_state=data_state, fresh_data=fresh_data,
+        ctx=ctx,
     )
     result = await anyio.to_thread.run_sync(call)
 
@@ -1109,8 +1164,6 @@ async def get_search_analytics(
             recovered, _message = await run_inline_recovery(
                 ctx, entry_category=_LAST_BRIEF["error_category"])
             if recovered:
-                # Clear the failed attempt's brief so a clean retry reports
-                # clean telemetry (impl re-sets it if the retry fails too).
                 _set_brief(None, None)
                 result = await anyio.to_thread.run_sync(call)
     except Exception:
@@ -1121,16 +1174,295 @@ async def get_search_analytics(
 
 @mcp.tool(annotations=_ANNOTATIONS_READ_API)
 @instrument
-def get_sitemaps():
-    """
-    Get all sitemaps for the configured site.
+def get_data_status(site_url: str | None = None, ctx: Context = None) -> dict:
+    """Inspect the publication frontier of Google Search Console data for a property.
     
+    Eliminates date-probing loops by returning the exact latest dates published by Google,
+    the lag from wall clock, and whether fresh/preliminary data exists.
+    
+    Args:
+        site_url: Target site URL (defaults to configured site or verified property)
+        
+    Returns:
+        Dictionary with latest_final_date, latest_available_date, lag_days, and plain-English guidance.
+    """
+    target_site = _resolve_site_url(site_url)
+    if not target_site:
+        return {"error": "No site_url provided and no default GSC_SITE_URL configured."}
+
+    try:
+        service = get_gsc_service()
+        today = datetime.now()
+        start_date = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
+
+        # Query with dataState='all' to get the full frontier
+        req = {
+            "startDate": start_date,
+            "endDate": end_date,
+            "dimensions": ["date"],
+            "dataState": "all",
+            "rowLimit": 30
+        }
+        resp = service.searchanalytics().query(siteUrl=target_site, body=req).execute()
+        rows = resp.get("rows", [])
+        
+        dates = sorted([r["keys"][0] for r in rows if "keys" in r and r["keys"]])
+        if not dates:
+            # Fallback check with dataState='final'
+            req["dataState"] = "final"
+            resp2 = service.searchanalytics().query(siteUrl=target_site, body=req).execute()
+            rows2 = resp2.get("rows", [])
+            dates = sorted([r["keys"][0] for r in rows2 if "keys" in r and r["keys"]])
+
+        if not dates:
+            return {
+                "site_url": target_site,
+                "status": "no_data_found",
+                "guidance": "No search impressions recorded in the trailing 14 days for this property."
+            }
+
+        latest_date = dates[-1]
+        try:
+            latest_dt = datetime.strptime(latest_date, "%Y-%m-%d")
+            lag_days = (today - latest_dt).days
+        except Exception:
+            lag_days = None
+
+        guidance = (
+            f"Google Search Console data for {target_site} is published up to {latest_date} "
+            f"({lag_days} days lag from wall clock). To avoid empty 0-row results, always set end_date <= '{latest_date}'."
+        )
+
+        return {
+            "site_url": target_site,
+            "latest_available_date": latest_date,
+            "lag_days": lag_days,
+            "days_returned_count": len(dates),
+            "date_range_available": f"{dates[0]} to {latest_date}",
+            "guidance": guidance
+        }
+    except Exception as e:
+        brief = _api_error_text(e, "checking data status")
+        if brief:
+            return {"error": brief}
+        return {"error": f"Error fetching GSC data status: {str(e)}"}
+
+
+@mcp.tool(annotations=_ANNOTATIONS_READ_API)
+@instrument
+def inspect_url(url: str, site_url: str | None = None, ctx: Context = None) -> dict:
+    """Inspect index status, canonical URLs, and crawl health of a specific URL via Google URL Inspection API.
+    
+    Args:
+        url: Absolute URL to inspect (must belong to the verified site)
+        site_url: Verified property URL (defaults to configured site or inferred from url host)
+        
+    Returns:
+        Structured inspection result including indexing verdict, coverageState, lastCrawlTime, canonical URLs, and mobile usability.
+    """
+    target_site = _resolve_site_url(site_url)
+    if not target_site:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            if parsed.hostname:
+                target_site = _resolve_site_url(parsed.hostname)
+        except Exception:
+            pass
+
+    if not target_site:
+        return {"error": "Could not determine site_url for inspection. Please provide site_url explicitly."}
+
+    try:
+        service = get_gsc_service()
+        body = {
+            "inspectionUrl": url,
+            "siteUrl": target_site
+        }
+        resp = service.urlInspection().index().inspect(body=body).execute()
+        result = resp.get("inspectionResult", {})
+        idx = result.get("indexStatusResult", {})
+        mobile = result.get("mobileUsabilityResult", {})
+        rich = result.get("richResultsResult", {})
+
+        return {
+            "inspection_url": url,
+            "site_url": target_site,
+            "verdict": idx.get("verdict", "NEUTRAL"),
+            "coverage_state": idx.get("coverageState", "Unknown"),
+            "indexing_state": idx.get("indexingState", "Unknown"),
+            "robots_txt_state": idx.get("robotsTxtState", "Unknown"),
+            "crawled_as": idx.get("crawledAs", "Unknown"),
+            "last_crawl_time": idx.get("lastCrawlTime"),
+            "page_fetch_state": idx.get("pageFetchState"),
+            "google_canonical": idx.get("googleCanonical"),
+            "user_canonical": idx.get("userCanonical"),
+            "referring_urls": idx.get("referringUrls", []),
+            "mobile_usability_verdict": mobile.get("verdict", "NEUTRAL"),
+            "rich_results_verdict": rich.get("verdict", "NEUTRAL")
+        }
+    except Exception as e:
+        brief = _api_error_text(e, f"inspecting URL {url}")
+        if brief:
+            return {"error": brief}
+        return {"error": f"Error inspecting URL: {str(e)}"}
+
+
+@mcp.tool(annotations=_ANNOTATIONS_READ_API)
+@instrument
+def compare_performance(
+    current_start: str,
+    current_end: str,
+    prior_start: str | None = None,
+    prior_end: str | None = None,
+    dimensions: list[str] = ["query"],
+    site_url: str | None = None,
+    row_limit: int = 50,
+    search_type: str = "web",
+    ctx: Context = None
+) -> dict:
+    """Compare search performance between two date ranges (Period-over-Period) with server-side delta calculations.
+    
+    If prior_start/prior_end are omitted, the prior period is automatically computed with matching duration.
+    
+    Args:
+        current_start: Start of current period (YYYY-MM-DD)
+        current_end: End of current period (YYYY-MM-DD)
+        prior_start: Start of prior period (YYYY-MM-DD) (optional)
+        prior_end: End of prior period (YYYY-MM-DD) (optional)
+        dimensions: List of dimensions to compare (default: ['query'])
+        site_url: Target site URL (optional)
+        row_limit: Max items to return in comparative breakdown (default: 50)
+        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews')
+        
+    Returns:
+        Structured comparative summary, delta percentages, and top movers.
+    """
+    target_site = _resolve_site_url(site_url)
+    
+    # Auto-calculate prior dates if omitted
+    curr_s_dt = datetime.strptime(current_start, "%Y-%m-%d")
+    curr_e_dt = datetime.strptime(current_end, "%Y-%m-%d")
+    duration = (curr_e_dt - curr_s_dt).days + 1
+    
+    if not prior_start or not prior_end:
+        prior_e_dt = curr_s_dt - timedelta(days=1)
+        prior_s_dt = prior_e_dt - timedelta(days=duration - 1)
+        prior_start = prior_s_dt.strftime("%Y-%m-%d")
+        prior_end = prior_e_dt.strftime("%Y-%m-%d")
+
+    # Fetch current
+    curr_res = _get_search_analytics_impl(
+        dimensions=dimensions,
+        start_date=current_start,
+        end_date=current_end,
+        site_url=target_site,
+        search_type=search_type,
+        row_limit=max(row_limit * 2, 500),
+        ctx=ctx
+    )
+    if isinstance(curr_res, dict) and "error" in curr_res:
+        return curr_res
+
+    # Fetch prior
+    prior_res = _get_search_analytics_impl(
+        dimensions=dimensions,
+        start_date=prior_start,
+        end_date=prior_end,
+        site_url=target_site,
+        search_type=search_type,
+        row_limit=max(row_limit * 2, 500),
+        ctx=ctx
+    )
+    if isinstance(prior_res, dict) and "error" in prior_res:
+        return prior_res
+
+    curr_data = curr_res.get("data", []) if isinstance(curr_res, dict) else []
+    prior_data = prior_res.get("data", []) if isinstance(prior_res, dict) else []
+
+    curr_clicks = sum(r.get("clicks", 0) for r in curr_data)
+    curr_impr = sum(r.get("impressions", 0) for r in curr_data)
+    prior_clicks = sum(r.get("clicks", 0) for r in prior_data)
+    prior_impr = sum(r.get("impressions", 0) for r in prior_data)
+
+    clicks_delta = curr_clicks - prior_clicks
+    clicks_pct = round((clicks_delta / prior_clicks) * 100, 2) if prior_clicks > 0 else (100.0 if curr_clicks > 0 else 0.0)
+    impr_delta = curr_impr - prior_impr
+    impr_pct = round((impr_delta / prior_impr) * 100, 2) if prior_impr > 0 else (100.0 if curr_impr > 0 else 0.0)
+
+    def _key(row):
+        return tuple(str(row.get(d, "")) for d in dimensions)
+
+    prior_map = {_key(r): r for r in prior_data}
+    comparison = []
+
+    for r in curr_data:
+        k = _key(r)
+        p = prior_map.get(k, {})
+        
+        c_clicks = r.get("clicks", 0)
+        p_clicks = p.get("clicks", 0)
+        d_clicks = c_clicks - p_clicks
+        pct_clicks = round((d_clicks / p_clicks) * 100, 2) if p_clicks > 0 else (100.0 if c_clicks > 0 else 0.0)
+
+        c_impr = r.get("impressions", 0)
+        p_impr = p.get("impressions", 0)
+        d_impr = c_impr - p_impr
+
+        row_dict = {d: r.get(d) for d in dimensions}
+        row_dict.update({
+            "clicks_current": c_clicks,
+            "clicks_prior": p_clicks,
+            "clicks_delta": d_clicks,
+            "clicks_pct_change": pct_clicks,
+            "impressions_current": c_impr,
+            "impressions_prior": p_impr,
+            "impressions_delta": d_impr,
+            "position_current": r.get("position", 0.0),
+            "position_prior": p.get("position", 0.0),
+            "position_delta": round(r.get("position", 0.0) - p.get("position", 0.0), 1)
+        })
+        comparison.append(row_dict)
+
+    comparison.sort(key=lambda x: abs(x["clicks_delta"]), reverse=True)
+
+    return {
+        "site_url": target_site,
+        "current_period": f"{current_start} to {current_end}",
+        "prior_period": f"{prior_start} to {prior_end}",
+        "summary": {
+            "current_clicks": curr_clicks,
+            "prior_clicks": prior_clicks,
+            "clicks_delta": clicks_delta,
+            "clicks_pct_change": clicks_pct,
+            "current_impressions": curr_impr,
+            "prior_impressions": prior_impr,
+            "impressions_delta": impr_delta,
+            "impressions_pct_change": impr_pct,
+        },
+        "comparison": comparison[:row_limit]
+    }
+
+
+@mcp.tool(annotations=_ANNOTATIONS_READ_API)
+@instrument
+def get_sitemaps(site_url: str | None = None):
+    """
+    Get all sitemaps for the verified site.
+    
+    Args:
+        site_url: Target site URL (defaults to configured site)
+        
     Returns:
         List of sitemaps with their status and details.
     """
     try:
+        target_site = _resolve_site_url(site_url)
+        if not target_site:
+            return {"error": "No site_url provided and no default GSC_SITE_URL configured."}
         service = get_gsc_service()
-        sitemaps = service.sitemaps().list(siteUrl=GSC_SITE_URL).execute()
+        sitemaps = service.sitemaps().list(siteUrl=target_site).execute()
         
         result = []
         for sitemap in sitemaps.get('sitemap', []):
@@ -1153,22 +1485,27 @@ def get_sitemaps():
             return {"error": brief}
         return {"error": f"Error fetching sitemaps: {str(e)}"}
 
+
 @mcp.tool(annotations=_ANNOTATIONS_WRITE_API)
 @instrument
-def submit_sitemap(sitemap_url: str):
+def submit_sitemap(sitemap_url: str, site_url: str | None = None):
     """
     Submit a sitemap to Google Search Console.
     
     Args:
         sitemap_url: Full URL of the sitemap to submit
+        site_url: Target site URL (defaults to configured site)
         
     Returns:
         Success message or error details.
     """
     try:
+        target_site = _resolve_site_url(site_url)
+        if not target_site:
+            return {"error": "No site_url provided and no default GSC_SITE_URL configured."}
         service = get_gsc_service()
         service.sitemaps().submit(
-            siteUrl=GSC_SITE_URL,
+            siteUrl=target_site,
             feedpath=sitemap_url
         ).execute()
         
@@ -1180,22 +1517,27 @@ def submit_sitemap(sitemap_url: str):
             return {"error": brief}
         return {"error": f"Error submitting sitemap: {str(e)}"}
 
+
 @mcp.tool(annotations=_ANNOTATIONS_DELETE_API)
 @instrument
-def delete_sitemap(sitemap_url: str):
+def delete_sitemap(sitemap_url: str, site_url: str | None = None):
     """
     Delete a sitemap from Google Search Console.
     
     Args:
         sitemap_url: Full URL of the sitemap to delete
+        site_url: Target site URL (defaults to configured site)
         
     Returns:
         Success message or error details.
     """
     try:
+        target_site = _resolve_site_url(site_url)
+        if not target_site:
+            return {"error": "No site_url provided and no default GSC_SITE_URL configured."}
         service = get_gsc_service()
         service.sitemaps().delete(
-            siteUrl=GSC_SITE_URL,
+            siteUrl=target_site,
             feedpath=sitemap_url
         ).execute()
         

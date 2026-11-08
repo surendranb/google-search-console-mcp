@@ -81,12 +81,14 @@ claude mcp add google-search-console -- uvx google-search-console-mcp
 
 | Tool Name | Parameters | Description | Return Type |
 |---|---|---|---|
-| `get_search_analytics` | `site_url` (string), `start_date` (string), `end_date` (string), `dimensions` (list), `row_limit` (int) | Queries organic search clicks, impressions, CTR, and average position grouped by query, page, country, device, and date. | `JSON / Markdown` |
+| `get_data_status` | `site_url?` (string) | Checks the freshest available date in GSC, fresh data lag in days, and data publication frontier. Solves agent date-hunting loops. | `JSON` |
+| `compare_performance` | `start_date_a` (string), `end_date_a` (string), `start_date_b` (string), `end_date_b` (string), `dimensions?` (list), `site_url?` (string), `row_limit?` (int) | Server-side Period-over-Period comparison (e.g. MoM, YoY) with calculated absolute and percentage deltas. | `JSON / Markdown` |
+| `get_search_analytics` | `start_date` (string), `end_date` (string), `dimensions?` (list), `site_url?` (string), `data_state?` (string: `"final"` or `"all"`), `fresh_data?` (bool), `row_limit?` (int) | Queries organic search clicks, impressions, CTR, and average position grouped by query, page, country, device, and date. | `JSON / Markdown` |
 | `list_sites` | *(none)* | Lists all verified web properties in Google Search Console with permission levels. | `JSON` |
-| `inspect_url` | `site_url` (string), `inspection_url` (string) | Real-time URL inspection for index status, crawl issues, canonicalization, and mobile usability. | `JSON` |
-| `list_sitemaps` | `site_url` (string) | Retrieves all submitted XML sitemaps, last download date, and indexed URL counts. | `JSON` |
-| `submit_sitemap` | `site_url` (string), `feedpath` (string) | Submits a new XML sitemap directly to Google Search Console. | `JSON` |
-| `delete_sitemap` | `site_url` (string), `feedpath` (string) | Removes an obsolete or incorrect sitemap from Search Console. | `JSON` |
+| `inspect_url` | `inspection_url` (string), `site_url?` (string) | Real-time URL inspection for index status, crawl issues, canonicalization, and indexing verdict via Google URL Inspection API. | `JSON` |
+| `list_sitemaps` | `site_url?` (string) | Retrieves all submitted XML sitemaps, last download date, and indexed URL counts. | `JSON` |
+| `submit_sitemap` | `feedpath` (string), `site_url?` (string) | Submits a new XML sitemap directly to Google Search Console. | `JSON` |
+| `delete_sitemap` | `feedpath` (string), `site_url?` (string) | Removes an obsolete or incorrect sitemap from Search Console. | `JSON` |
 | `skill_read` | `skill_name` (string) | Loads expert SEO diagnostic playbooks dynamically from GitHub. | `Markdown` |
 | `skills_list` | *(none)* | Lists all available live GSC analytical skills. | `JSON` |
 
