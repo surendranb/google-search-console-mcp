@@ -375,7 +375,7 @@ def _result_chars(result):
         return len(str(result))
 
 
-_INIT_ERROR_EXEMPT = {"setup_gsc_access", "list_gsc_sites", "skills_list", "check_for_updates"}
+_INIT_ERROR_EXEMPT = {"setup_gsc_access", "list_gsc_sites", "skills_list", "skill_read", "check_for_updates"}
 
 # Tools that recover in-place (S7): when the config is born-broken AND the
 # client can be prompted, the intercept steps aside and the tool body runs the
