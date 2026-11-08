@@ -206,6 +206,29 @@ class TestGSCUtilityHardening(unittest.TestCase):
         self.assertEqual(kw1["clicks_delta"], 20)
         self.assertEqual(kw1["clicks_pct_change"], 25.0)
 
+    def test_dynamic_github_skills_and_setup(self):
+        """Dynamic GitHub skills loader lists and reads setup and analytical playbooks."""
+        # 1. skills_list includes gsc_setup.md
+        listing = gsc.skills_list()
+        skill_ids = [s["id"] for s in listing["skills"]]
+        self.assertIn("gsc_setup.md", skill_ids)
+        self.assertIn("brand_visibility.md", skill_ids)
+        self.assertEqual(listing.get("source"), "github")
+
+        # 2. skill_read resolves gsc_setup directly and via alias 'setup'
+        res_setup = gsc.skill_read("gsc_setup")
+        self.assertEqual(res_setup["id"], "gsc_setup.md")
+        self.assertIn("Google Search Console Setup & Authentication Guide", res_setup["title"])
+        self.assertIn("GOOGLE_APPLICATION_CREDENTIALS", res_setup["content"])
+
+        res_alias = gsc.skill_read("setup")
+        self.assertEqual(res_alias["id"], "gsc_setup.md")
+
+        # 3. Unknown skill returns actionable error message listing candidates
+        res_err = gsc.skill_read("non_existent_skill_xyz")
+        self.assertIn("error", res_err)
+        self.assertIn("gsc_setup.md", res_err["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

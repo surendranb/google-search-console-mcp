@@ -3,7 +3,7 @@
     "google-search-console-mcp": {
       "command": "uvx",
       "args": [
-        "google-search-console-mcp==0.11.0"
+        "google-search-console-mcp==0.11.1"
       ],
       "env": {
         "GSC_SITE_URL": "https://example.com/",

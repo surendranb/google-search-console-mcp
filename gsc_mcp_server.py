@@ -69,8 +69,8 @@ def _compute_init_state():
                     "In Search Console (search.google.com/search-console) > Settings > "
                     "Users and permissions, add that service account's email as a user.",
                     "Set GOOGLE_APPLICATION_CREDENTIALS to the key's absolute path in this MCP "
-                    "server's env config and restart the client — or, if this client supports "
-                    "interactive prompts, call setup_gsc_access to fix it in-chat now.",
+                    "server's env config and restart the client — or call skill_read('gsc_setup') "
+                    "for step-by-step guidance, or setup_gsc_access to fix it in-chat now.",
                 ],
             ),
             "InternalError",
@@ -156,8 +156,8 @@ def _api_error_text(e, operation):
                     "for read queries.",
                     "Double-check GSC_SITE_URL matches the property EXACTLY — "
                     "'https://example.com/' and 'sc-domain:example.com' are DIFFERENT properties.",
-                    "Then retry — or call setup_gsc_access to verify in-chat if this client "
-                    "supports interactive prompts.",
+                    "Then retry — or call skill_read('gsc_setup') for complete permissions "
+                    "troubleshooting, or setup_gsc_access to verify in-chat.",
                 ],
             ) + f"  [Original error: {err[:200]}]"
         if any(m in low for m in _AUTH_401_MARKERS):
@@ -792,6 +792,72 @@ def list_available_metrics():
     metrics = load_gsc_metrics()
     return metrics.get('metrics', [])
 
+GSC_SKILLS_URL = "https://raw.githubusercontent.com/surendranb/google-search-console-mcp/main/skills"
+
+GSC_SKILLS_CATALOG = [
+    {
+        "id": "gsc_setup.md",
+        "title": "Google Search Console Setup & Authentication Guide",
+        "description": "Step-by-step instructions for GCP credentials, GSC user permissions, and MCP client harnesses.",
+    },
+    {
+        "id": "brand_visibility.md",
+        "title": "Brand Visibility Playbook",
+        "description": "Track brand vs. non-brand search split, brand erosion, and query sentiment.",
+    },
+    {
+        "id": "citation_opportunities.md",
+        "title": "AI Citation & Rich Result Opportunities",
+        "description": "Identify high-impression low-CTR queries and pages prime for AI Overview citations.",
+    },
+    {
+        "id": "intent_efficiency.md",
+        "title": "Intent Efficiency Playbook",
+        "description": "Discover queries with declining efficiency or high opportunity to optimize content for search intent.",
+    },
+    {
+        "id": "intent_segmentation.md",
+        "title": "Search Intent Segmentation Playbook",
+        "description": "Segment organic queries into Informational, Commercial, Transactional, and Navigational buckets.",
+    },
+    {
+        "id": "search_appearance_audit.md",
+        "title": "Search Appearance & SERP Features Audit",
+        "description": "Audit rich results, review snippets, and special search appearances driving organic performance.",
+    },
+]
+
+
+def _normalize_skill_id(skill_id: str) -> str:
+    s = skill_id.strip()
+    if s in ("setup", "setup.md", "gsc_setup"):
+        return "gsc_setup.md"
+    if not s.endswith(".md"):
+        s = f"{s}.md"
+    return s.replace("-", "_")
+
+
+def _fetch_skill_content(filename: str) -> str | None:
+    # 1. Try remote GitHub fetch (raw markdown)
+    try:
+        url = f"{GSC_SKILLS_URL}/{filename}"
+        req = urllib.request.Request(url, headers={"User-Agent": "google-search-console-mcp"})
+        with urllib.request.urlopen(req, timeout=4.0) as r:
+            return r.read().decode("utf-8", "replace")
+    except Exception:
+        pass
+
+    # 2. Local fallback if repository directory exists (dev / offline mode)
+    skills_dir = Path(__file__).parent / "skills"
+    local_file = (skills_dir / filename).resolve()
+    try:
+        if skills_dir.is_dir() and local_file.is_relative_to(skills_dir.resolve()) and local_file.is_file():
+            return local_file.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return None
+
+
 @mcp.tool(annotations=_ANNOTATIONS_READ_LOCAL)
 @instrument
 def skills_list():
@@ -799,30 +865,8 @@ def skills_list():
     List available analytical skills (playbooks) for Google Search Console.
     Use this to learn proven field combinations and how to interpret GSC data for specific SEO tasks. Fetch the full playbook with skill_read.
     """
-    skills_dir = Path(__file__).parent / "skills"
-    if not skills_dir.exists():
-        return {"skills": [], "message": "No skills directory found."}
-        
-    available_skills = []
-    for md_file in skills_dir.glob("*.md"):
-        try:
-            content = md_file.read_text()
-            # Simple frontmatter parsing
-            title = md_file.stem
-            desc = ""
-            for line in content.splitlines():
-                if line.startswith("title:"): title = line.split(":", 1)[1].strip()
-                if line.startswith("description:"): desc = line.split(":", 1)[1].strip()
-            
-            available_skills.append({
-                "id": md_file.name,
-                "title": title,
-                "description": desc,
-            })
-        except Exception:
-            pass
-            
-    return {"skills": available_skills}
+    return {"skills": GSC_SKILLS_CATALOG, "source": "github"}
+
 
 @mcp.tool(annotations=_ANNOTATIONS_READ_LOCAL)
 @instrument
@@ -831,38 +875,30 @@ def skill_read(skill_id: str):
     Fetch the full content of one analytical skill (playbook) for Google Search Console.
     
     Args:
-        skill_id: The skill id from skills_list (e.g., "brand_visibility.md")
+        skill_id: The skill id from skills_list (e.g., "brand_visibility.md" or "gsc_setup")
         
     Returns:
         The full skill content with title, description, and playbook steps.
     """
-    # Standard §6: skill_read EVENT (which skill, did the fetch work) —
-    # additive to the tool_executed capture from @instrument.
-    skills_dir = Path(__file__).parent / "skills"
-    if not skills_dir.exists():
-        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
-        return {"error": "No skills directory found."}
-
-    skill_file = (skills_dir / skill_id).resolve()
-    if not skill_file.is_relative_to(skills_dir.resolve()):
-        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
-        return {"error": f"Skill '{skill_id}' not found. Call skills_list to see available skills."}
-    if not skill_file.exists() or not skill_file.is_file():
-        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
-        return {"error": f"Skill '{skill_id}' not found. Call skills_list to see available skills."}
-
-    try:
-        content = skill_file.read_text()
-        title = skill_file.stem
+    target = _normalize_skill_id(skill_id)
+    content = _fetch_skill_content(target)
+    if content is not None:
+        title = Path(target).stem
         desc = ""
         for line in content.splitlines():
-            if line.startswith("title:"): title = line.split(":", 1)[1].strip()
-            if line.startswith("description:"): desc = line.split(":", 1)[1].strip()
-        send_telemetry("skill_read", {"skill_name": skill_file.name, "fetch_ok": True})
-        return {"id": skill_file.name, "title": title, "description": desc, "content": content}
-    except Exception as e:
-        send_telemetry("skill_read", {"skill_name": skill_id, "fetch_ok": False})
-        return {"error": f"Error reading skill: {str(e)}"}
+            if line.startswith("title:"):
+                title = line.split(":", 1)[1].strip()
+            if line.startswith("description:"):
+                desc = line.split(":", 1)[1].strip()
+        send_telemetry("skill_read", {"skill_name": target, "fetch_ok": True})
+        return {"id": target, "title": title, "description": desc, "content": content}
+
+    send_telemetry("skill_read", {"skill_name": target, "fetch_ok": False})
+    avail = ", ".join(s["id"] for s in GSC_SKILLS_CATALOG)
+    return {
+        "error": f"Skill '{skill_id}' not found. Available skills: {avail}. "
+                 f"If network is blocked: retry, or check if raw.githubusercontent.com is accessible."
+    }
 
 # --- S2: output schema for the primary data tool ---
 # Declared via the SDK's structured-output mechanism (return annotation +
@@ -1562,34 +1598,27 @@ def check_for_updates() -> dict:
 
 
 # --- S5: skills mirrored as MCP resources (Protocol Surfaces v1) ---
-# Same content as skill_read (local packaged file), discoverable without a
+# Same content as skill_read (GitHub-backed with local fallback), discoverable without a
 # tool call. Pull-only: costs nothing until a client actually reads one.
 def _register_skill_resources():
     try:
-        skills_dir = Path(__file__).parent / "skills"
-        if not skills_dir.exists():
-            return
-        for md_file in sorted(skills_dir.glob("*.md")):
-            stem = md_file.stem
+        for item in GSC_SKILLS_CATALOG:
+            filename = item["id"]
+            stem = Path(filename).stem
             uri = f"skill://{stem}"
-            title, desc = stem, ""
-            try:
-                for line in md_file.read_text().splitlines():
-                    if line.startswith("title:"):
-                        title = line.split(":", 1)[1].strip()
-                    if line.startswith("description:"):
-                        desc = line.split(":", 1)[1].strip()
-            except Exception:
-                pass
+            title = item.get("title", stem)
+            desc = item.get("description", "")
 
-            def _make_reader(path=md_file, resource_uri=uri):
+            def _make_reader(fn=filename, resource_uri=uri):
                 def _skill_resource():
-                    content = path.read_text()
+                    content = _fetch_skill_content(fn)
+                    if content is None:
+                        content = f"# Skill {fn}\n\nUnable to fetch skill content from GitHub."
                     # Standard §4/§8: resource_read is a registered event that
                     # finally gets an emitter; resource_uri is its prop.
                     send_telemetry("resource_read", {"resource_uri": resource_uri})
                     return content
-                _skill_resource.__name__ = f"skill_resource_{path.stem}"
+                _skill_resource.__name__ = f"skill_resource_{Path(fn).stem}"
                 return _skill_resource
 
             mcp.resource(
