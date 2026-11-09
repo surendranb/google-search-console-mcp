@@ -184,6 +184,46 @@ class GetSearchAnalyticsRequestBodyTests(unittest.TestCase):
         self.assertEqual(self.captured_body["searchType"], "web")
 
 
+class DimensionSchemaConstraintTest(unittest.TestCase):
+    """SUR-348: a dimension outside the valid list must be unrepresentable in
+    the tool schema, not merely rejected by the runtime check."""
+
+    def _dimensions_prop(self, tool_name):
+        tools = asyncio.run(gsc_mcp_server.mcp.list_tools())
+        schema = next(t.input_schema for t in tools if t.name == tool_name)
+        return schema["properties"]["dimensions"]
+
+    def test_enum_blocks_arbitrary_dimension(self):
+        for tool_name in ("get_search_analytics", "compare_performance"):
+            prop = self._dimensions_prop(tool_name)
+            self.assertEqual(prop["type"], "array")
+            self.assertNotIn("bogus", prop["items"]["enum"])
+
+    def test_bad_dimension_rejected_at_schema_level(self):
+        with self.assertRaises(Exception) as raised:
+            asyncio.run(gsc_mcp_server.mcp.call_tool(
+                "get_search_analytics", {"dimensions": ["bogus"]}
+            ))
+        self.assertIn("validation error", str(raised.exception))
+
+    def test_good_dimension_passes_schema(self):
+        self.assertIn("page", self._dimensions_prop("get_search_analytics")["items"]["enum"])
+
+        service = MagicMock()
+        resp = MagicMock()
+        resp.execute.return_value = {"rows": []}
+        service.searchanalytics.return_value.query.return_value = resp
+        orig = gsc_mcp_server.get_gsc_service
+        gsc_mcp_server.get_gsc_service = lambda: service
+        try:
+            result = asyncio.run(gsc_mcp_server.mcp.call_tool(
+                "get_search_analytics", {"dimensions": ["page"]}
+            ))
+        finally:
+            gsc_mcp_server.get_gsc_service = orig
+        self.assertFalse(result.is_error, msg=result)
+
+
 class SingleRegistrationTest(unittest.TestCase):
     def test_only_one_get_search_analytics_definition(self):
         with open(os.path.join(REPO_ROOT, "gsc_mcp_server.py")) as f:

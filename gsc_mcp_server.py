@@ -18,6 +18,7 @@ import functools
 import anyio.to_thread
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Literal
 from typing_extensions import TypedDict
 
 from gsc_telemetry import (
@@ -949,6 +950,14 @@ def _coerce_bool(val, default: bool = False) -> bool:
     return default
 
 
+# SUR-348: the schema enum is the first line of defence; the runtime check
+# inside _get_search_analytics_impl stays as the second.
+Dimension = Literal[
+    "country", "device", "page", "query", "searchAppearance", "date",
+    "search_appearance", "searchappearance",
+]
+
+
 def _get_search_analytics_impl(
     dimensions: list[str] = ["query"],
     start_date: str | None = None,
@@ -1136,7 +1145,7 @@ def _get_search_analytics_impl(
 @mcp.tool(annotations=_ANNOTATIONS_READ_API, structured_output=True)
 @instrument
 async def get_search_analytics(
-    dimensions: list[str] = ["query"],
+    dimensions: list[Dimension] = ["query"],
     start_date: str | None = None,
     end_date: str | None = None,
     filters: list[dict] | None = None,
@@ -1352,7 +1361,7 @@ def compare_performance(
     current_end: str,
     prior_start: str | None = None,
     prior_end: str | None = None,
-    dimensions: list[str] = ["query"],
+    dimensions: list[Dimension] = ["query"],
     site_url: str | None = None,
     row_limit: int = 50,
     search_type: str = "web",
