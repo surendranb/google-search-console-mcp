@@ -300,10 +300,20 @@ async def test_protocol_surfaces_legacy_era(tmp_path):
 
                 # Wire format: dict returns are still plain indent-2 JSON text;
                 # structuredContent is additive alongside.
+                # SUR-348: a bad `dimensions` value never reaches the body — the
+                # enum rejects it. The runtime guard still covers filter dims.
+                dim_enum = by_name["get_search_analytics"].input_schema[
+                    "properties"]["dimensions"]["items"]["enum"]
+                assert "bogus" not in dim_enum and "query" in dim_enum
                 r = await session.call_tool("get_search_analytics", {"dimensions": ["bogus"]})
+                assert r.is_error is True
+                r = await session.call_tool("get_search_analytics", {
+                    "dimensions": ["query"],
+                    "filters": [{"dimension": "bogus", "operator": "equals",
+                                 "expression": "x"}]})
                 text = r.content[0].text
                 assert text == json.dumps(
-                    {"error": "Invalid dimension 'bogus'. Valid dimensions: "
+                    {"error": "Invalid filter dimension 'bogus'. Valid dimensions: "
                               "['country', 'device', 'page', 'query', 'searchAppearance', 'date']"},
                     indent=2)
                 assert r.structured_content == {"result": json.loads(text)}
@@ -369,7 +379,7 @@ async def test_protocol_surfaces_2026_era(tmp_path):
                 assert {t.name for t in tools} >= {
                     "get_search_analytics", "setup_gsc_access", "skills_list"}
                 r = await session.call_tool("get_search_analytics", {"dimensions": ["bogus"]})
-                assert json.loads(r.content[0].text)["error"].startswith("Invalid dimension 'bogus'")
+                assert r.is_error is True
                 dims = await session.call_tool("list_available_dimensions", {})
                 assert "api_name" in dims.content[0].text
     finally:
