@@ -1148,6 +1148,14 @@ def _get_search_analytics_impl(
         if not canonical_type:
             return {"error": f"Invalid search_type '{search_type}'. Valid types: {valid_search_types}"}
         search_type = canonical_type
+
+        # Live API: type=webMultimodal with query grain returns HTTP 400
+        # "Request for WEB_MULTIMODAL cannot be grouped by query".
+        if search_type == "webMultimodal" and "query" in dimensions:
+            return {"error": "Invalid combination: webMultimodal cannot be grouped by query — Google "
+                             "does not return Lens, Circle to Search, or image-upload results at query "
+                             "grain. Group by date, page, country, device or searchAppearance instead, "
+                             "or keep search_type='web' when you need query-level data."}
         
         target_site = _resolve_site_url(site_url)
         if not target_site:
@@ -1283,7 +1291,7 @@ async def get_search_analytics(
         end_date: End date in YYYY-MM-DD format (defaults to 3 days ago)
         filters: List of filter objects (e.g., [{"dimension": "country", "operator": "equals", "expression": "usa"}]). Filter by brandedClassification with operator "equals" and expression BRANDED or NON_BRANDED; that cannot be combined with a query filter in the same request.
         filter_lists: Multi-value filters, several exact values for one dimension in one request (e.g., [{"dimension": "country", "expressions": ["usa", "gbr", "deu"]}, {"dimension": "device", "expressions": ["MOBILE", "TABLET"]}]). Dimension must be country or device; a dimension cannot appear in both filters and filter_lists.
-        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews', 'webMultimodal'). webMultimodal covers Google Lens, Circle to Search, and image uploads.
+        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews', 'webMultimodal'). webMultimodal covers Google Lens, Circle to Search, and image uploads, and cannot be grouped by query.
         row_limit: Maximum number of rows to return (max 25000)
         start_row: Starting row for pagination (0-based)
         summary_only: If True, returns only aggregated totals (Token Efficient)
@@ -1498,7 +1506,7 @@ def compare_performance(
         dimensions: List of dimensions to compare (default: ['query'])
         site_url: Target site URL (optional)
         row_limit: Max items to return in comparative breakdown (default: 50)
-        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews', 'webMultimodal')
+        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews', 'webMultimodal'; webMultimodal cannot be grouped by query)
         
     Returns:
         Structured comparative summary, delta percentages, and top movers.

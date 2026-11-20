@@ -260,6 +260,27 @@ class NewSearchAnalyticsSurfaceTests(unittest.TestCase):
              {"dimension": "device", "expressions": ["MOBILE", "TABLET"]}],
         )
 
+    def test_web_multimodal_rejects_query_grain_but_keeps_legal_dimensions(self):
+        """Live 400 from Google: "Request for WEB_MULTIMODAL cannot be grouped
+        by query". Rejected locally, before any request is sent."""
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["query"], search_type="webMultimodal"
+        ))
+        self.assertIn("error", result)
+        self.assertIn("cannot be grouped by query", result["error"])
+        self.assertIn("search_type='web'", result["error"])
+        self.assertEqual(self.bodies, [])
+
+        for dims in (["date"], ["page"], ["country"], ["device"],
+                     ["searchAppearance"], ["page", "country"]):
+            self.bodies.clear()
+            result = asyncio.run(gsc_mcp_server.get_search_analytics(
+                dimensions=dims, search_type="webMultimodal"
+            ))
+            self.assertNotIn("error", result, msg=(dims, result))
+            self.assertEqual(self.bodies[0]["type"], "webMultimodal")
+            self.assertEqual(self.bodies[0]["dimensions"], dims)
+
     def test_filter_lists_cannot_repeat_a_filters_dimension(self):
         result = asyncio.run(gsc_mcp_server.get_search_analytics(
             dimensions=["page"],
