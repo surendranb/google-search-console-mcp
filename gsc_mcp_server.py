@@ -804,7 +804,7 @@ GSC_SKILLS_CATALOG = [
     {
         "id": "brand_visibility.md",
         "title": "Brand Visibility Playbook",
-        "description": "Track brand vs. non-brand search split, brand erosion, and query sentiment.",
+        "description": "Native branded vs non-branded split (with its eligibility caveat), brand erosion, and query sentiment.",
     },
     {
         "id": "citation_opportunities.md",
@@ -913,6 +913,7 @@ class SearchAnalyticsResult(TypedDict, total=False):
     metadata: dict
     data: list[dict]
     summary: dict
+    caveat: str
     error: str
 
 
@@ -954,8 +955,65 @@ def _coerce_bool(val, default: bool = False) -> bool:
 # inside _get_search_analytics_impl stays as the second.
 Dimension = Literal[
     "country", "device", "page", "query", "searchAppearance", "date",
+    "brandedClassification",
     "search_appearance", "searchappearance",
 ]
+
+
+def _branded_caveat(service, target_site: str, start_date: str, end_date: str,
+                    search_type: str, data_state: str) -> str:
+    """Explain a zero-row brandedClassification result instead of letting it
+    read as "no branded traffic".
+
+    Google returns rows for this dimension only for eligible properties
+    (top-level properties with enough query and impression volume) and only
+    from 2026-02-21; every other property gets rows: []. One probe grouped by
+    the dimension tells the two cases apart: rows mean the property IS
+    eligible, so the empty result is a real "nothing in this slice".
+    """
+    if end_date < "2026-02-21":
+        return (
+            "No rows: brandedClassification data only exists from 2026-02-21 onward, and this "
+            "window ends before that. The branded/non-branded split is unavailable for the "
+            "requested window — this is not zero branded traffic."
+        )
+    try:
+        probe = service.searchanalytics().query(siteUrl=target_site, body={
+            'startDate': start_date,
+            'endDate': end_date,
+            'dimensions': ['brandedClassification'],
+            'type': search_type,
+            'rowLimit': 25,
+            'dataState': data_state,
+        }).execute()
+        buckets = {str((r.get('keys') or [''])[0]): r for r in probe.get('rows', [])}
+    except Exception as e:
+        return (
+            "No rows, and an eligibility probe failed "
+            f"({type(e).__name__}: {e}). The branded figure is unverified — do not report it as 0%."
+        )
+
+    if buckets:
+        branded = buckets.get('BRANDED', {})
+        non_branded = buckets.get('NON_BRANDED', {})
+        return (
+            "No rows from this request. The property IS eligible for branded classification "
+            "(a probe grouped by it returned rows), so this is an empty slice, not an "
+            f"eligibility problem: branded impressions {int(branded.get('impressions', 0))}, "
+            f"non-branded impressions {int(non_branded.get('impressions', 0))} over "
+            f"{start_date}..{end_date}. Nothing matched the requested slice."
+        )
+
+    return (
+        "No rows, and a probe grouping ALL traffic by brandedClassification also returned "
+        "nothing. Branded data is served only to top-level properties with sufficient query and "
+        "impression volume; other properties get rows omitted entirely, which is "
+        "indistinguishable here from a property with no traffic in the window. The branded share "
+        "is UNKNOWN — do not report it as 0% or as 'no branded traffic'. Check whether the "
+        "Branded filter exists in the Search Console Performance report for this property; if it "
+        "does not, fall back to the brand-term query approximation and label it as an "
+        "approximation."
+    )
 
 
 def _get_search_analytics_impl(
@@ -963,6 +1021,7 @@ def _get_search_analytics_impl(
     start_date: str | None = None,
     end_date: str | None = None,
     filters: list[dict] | None = None,
+    filter_lists: list[dict] | None = None,
     search_type: str = "web",
     row_limit: int = 1000,
     start_row: int = 0,
@@ -999,7 +1058,8 @@ def _get_search_analytics_impl(
                 dimensions = [d.strip() for d in dimensions.split(',')]
 
         # Validate dimensions (case-insensitive & snake_case friendly)
-        valid_dimensions = ["country", "device", "page", "query", "searchAppearance", "date"]
+        valid_dimensions = ["country", "device", "page", "query", "searchAppearance", "date",
+                            "brandedClassification"]
         dim_map = {d.lower(): d for d in valid_dimensions}
         dim_map["search_appearance"] = "searchAppearance"
         dim_map["searchappearance"] = "searchAppearance"
@@ -1040,9 +1100,47 @@ def _get_search_analytics_impl(
                     'operator': str(filter_item.get('operator', 'equals')).lower(),
                     'expression': filter_item.get('expression')
                 })
+                if filter_dim == "brandedClassification":
+                    op = request_filters[-1]['operator']
+                    value = str(request_filters[-1]['expression']).strip().upper()
+                    if op != "equals" or value not in ("BRANDED", "NON_BRANDED"):
+                        return {"error": "brandedClassification filters take the 'equals' operator "
+                                         "and the value BRANDED or NON_BRANDED."}
+                    request_filters[-1]['expression'] = value
+
+        # dimensionFilterGroups[].filterLists[] — several exact values for one
+        # dimension in a single filter (multi-country / multi-device).
+        request_filter_lists = []
+        if filter_lists:
+            if isinstance(filter_lists, str):
+                try:
+                    filter_lists = json.loads(filter_lists)
+                except json.JSONDecodeError:
+                    return {"error": "Invalid filter_lists format. Expected JSON array."}
+            if isinstance(filter_lists, dict):
+                filter_lists = [filter_lists]
+            for item in filter_lists:
+                list_dim = str(item.get('dimension', '')).strip().lower()
+                if list_dim not in ("country", "device"):
+                    return {"error": f"Invalid filter_lists dimension '{item.get('dimension')}'. "
+                                     "Valid: country, device."}
+                expressions = item.get('expressions')
+                if isinstance(expressions, str):
+                    expressions = [expressions]
+                if not expressions:
+                    return {"error": f"filter_lists entry for '{list_dim}' needs a non-empty "
+                                     "'expressions' array."}
+                if list_dim in {f['dimension'] for f in request_filters}:
+                    return {"error": f"Cannot filter '{list_dim}' in both filters and filter_lists "
+                                     "in one request."}
+                request_filter_lists.append({
+                    'dimension': list_dim,
+                    'expressions': [str(e) for e in expressions],
+                })
         
         # Validate search type (case-insensitive)
-        valid_search_types = ["web", "image", "video", "news", "discover", "googleNews"]
+        valid_search_types = ["web", "image", "video", "news", "discover", "googleNews",
+                              "webMultimodal"]
         type_map = {t.lower(): t for t in valid_search_types}
         type_map["googlenews"] = "googleNews"
         type_map["google_news"] = "googleNews"
@@ -1060,7 +1158,7 @@ def _get_search_analytics_impl(
             'startDate': start_date,
             'endDate': end_date,
             'dimensions': dimensions,
-            'searchType': search_type,
+            'type': search_type,
             'rowLimit': min(row_limit, 25000),  # GSC API limit
             'startRow': start_row
         }
@@ -1071,10 +1169,13 @@ def _get_search_analytics_impl(
         else:
             request['dataState'] = 'final'
 
-        if request_filters:
-            request['dimensionFilterGroups'] = [{
-                'filters': request_filters
-            }]
+        if request_filters or request_filter_lists:
+            filter_group = {}
+            if request_filters:
+                filter_group['filters'] = request_filters
+            if request_filter_lists:
+                filter_group['filterLists'] = request_filter_lists
+            request['dimensionFilterGroups'] = [filter_group]
         
         # Execute the request
         service = get_gsc_service()
@@ -1084,9 +1185,17 @@ def _get_search_analytics_impl(
         ).execute()
         
         rows = response.get('rows', [])
+
+        # A branded request that returns nothing is ambiguous: ineligible
+        # properties get rows omitted entirely. Say which case it is.
+        caveat = None
+        if not rows and ("brandedClassification" in dimensions
+                         or any(f['dimension'] == "brandedClassification" for f in request_filters)):
+            caveat = _branded_caveat(service, target_site, start_date, end_date,
+                                     search_type, request['dataState'])
         
         if summary_only:
-            return {
+            summary_payload = {
                 "summary": {
                     "site_url": target_site,
                     "total_clicks": sum(r.get('clicks', 0) for r in rows),
@@ -1095,6 +1204,9 @@ def _get_search_analytics_impl(
                     "row_count": len(rows)
                 }
             }
+            if caveat:
+                summary_payload['caveat'] = caveat
+            return summary_payload
         
         # Format the response
         result = {
@@ -1129,6 +1241,8 @@ def _get_search_analytics_impl(
             
             result['data'].append(data_row)
         
+        if caveat:
+            result['caveat'] = caveat
         return result
         
     except Exception as e:
@@ -1149,6 +1263,7 @@ async def get_search_analytics(
     start_date: str | None = None,
     end_date: str | None = None,
     filters: list[dict] | None = None,
+    filter_lists: list[dict] | None = None,
     search_type: str = "web",
     row_limit: int = 1000,
     start_row: int = 0,
@@ -1163,11 +1278,12 @@ async def get_search_analytics(
     Retrieve Google Search Console search analytics data.
     
     Args:
-        dimensions: List of dimensions from: country, device, page, query, searchAppearance, date
+        dimensions: List of dimensions from: country, device, page, query, searchAppearance, date, brandedClassification
         start_date: Start date in YYYY-MM-DD format (defaults to 30 days ago)
         end_date: End date in YYYY-MM-DD format (defaults to 3 days ago)
-        filters: List of filter objects (e.g., [{"dimension": "country", "operator": "equals", "expression": "usa"}])
-        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews')
+        filters: List of filter objects (e.g., [{"dimension": "country", "operator": "equals", "expression": "usa"}]). Filter by brandedClassification with operator "equals" and expression BRANDED or NON_BRANDED; that cannot be combined with a query filter in the same request.
+        filter_lists: Multi-value filters, several exact values for one dimension in one request (e.g., [{"dimension": "country", "expressions": ["usa", "gbr", "deu"]}, {"dimension": "device", "expressions": ["MOBILE", "TABLET"]}]). Dimension must be country or device; a dimension cannot appear in both filters and filter_lists.
+        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews', 'webMultimodal'). webMultimodal covers Google Lens, Circle to Search, and image uploads.
         row_limit: Maximum number of rows to return (max 25000)
         start_row: Starting row for pagination (0-based)
         summary_only: If True, returns only aggregated totals (Token Efficient)
@@ -1178,6 +1294,8 @@ async def get_search_analytics(
 
     Returns:
         Dictionary containing search analytics data with clicks, impressions, ctr, and position metrics.
+        A 'caveat' string accompanies an empty brandedClassification result: branded data is served
+        only to eligible properties, and the caveat says whether the property is eligible.
     """
     if SERVER_INIT_ERROR and ctx is not None and request_supports_elicitation(ctx):
         try:
@@ -1192,7 +1310,8 @@ async def get_search_analytics(
     call = functools.partial(
         _get_search_analytics_impl,
         dimensions=dimensions, start_date=start_date, end_date=end_date,
-        filters=filters, search_type=search_type, row_limit=row_limit,
+        filters=filters, filter_lists=filter_lists, search_type=search_type,
+        row_limit=row_limit,
         start_row=start_row, summary_only=summary_only, intent=intent,
         site_url=site_url, data_state=data_state, fresh_data=fresh_data,
         ctx=ctx,
@@ -1379,7 +1498,7 @@ def compare_performance(
         dimensions: List of dimensions to compare (default: ['query'])
         site_url: Target site URL (optional)
         row_limit: Max items to return in comparative breakdown (default: 50)
-        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews')
+        search_type: Type of search ('web', 'image', 'video', 'news', 'discover', 'googleNews', 'webMultimodal')
         
     Returns:
         Structured comparative summary, delta percentages, and top movers.
@@ -1660,16 +1779,19 @@ def _prompt_used(prompt_name, has_args):
             description="How visible is a brand in Google Search? Branded vs non-branded share, CTR, positions.")
 def analyze_brand_visibility(brand_terms: str = "") -> str:
     _prompt_used("analyze-brand-visibility", bool(brand_terms))
-    terms = brand_terms.strip() or "(ask the user for their brand name plus common variants and misspellings)"
+    terms = brand_terms.strip() or "(no brand terms given — the native classification below does not need them)"
     return f"""Analyze brand visibility in Google Search using the Google Search Console tools.
 Brand terms: {terms}
 
 Work this way:
-1. Call skill_read("brand_visibility.md") first and follow its playbook — it has the proven field combinations.
+1. Call skill_read("brand_visibility.md") first and follow its playbook.
 2. Call list_available_dimensions before querying; never guess dimension names.
-3. Query get_search_analytics with dimensions=["query"] and a filter {{"dimension": "query", "operator": "contains", "expression": "<brand term>"}} — one call per brand variant. Always pass intent (e.g. intent="brand visibility analysis for <term>").
-4. Run one unfiltered call for site totals, then compute branded vs non-branded share.
-5. Report: branded share of clicks/impressions, branded CTR vs overall CTR, average position for exact brand queries (should be near 1 — higher means a problem), and any misspellings ranking poorly.
+3. One call produces the whole split natively: get_search_analytics with dimensions=["brandedClassification"] and intent="brand visibility analysis". Google classifies branded vs non-branded itself — no brand term list, no regex.
+4. Read the "caveat" field if the payload carries one. Branded data is served only to eligible properties (top-level properties with sufficient query and impression volume; data exists from 2026-02-21). The caveat states whether the property is eligible. If it says the branded share is UNKNOWN, report it as unknown — never as 0% or "no branded traffic".
+5. Slice further only if asked: pass filters=[{{"dimension": "brandedClassification", "operator": "equals", "expression": "BRANDED"}}] (equals only; cannot be combined with a query filter in the same request), or add page/device/country/date to dimensions.
+6. Report: branded share of clicks/impressions, branded CTR vs overall CTR, average position for the branded bucket (near 1 is healthy — higher means a problem), and the biggest non-branded queries worth winning.
+
+Fallback only when the caveat says the property is not eligible: filter queries by brand terms with {{"dimension": "query", "operator": "contains", "expression": "<brand term>"}} plus a notContains call for the rest, and label the result as an approximation.
 
 Quirks to respect: ctr in results is already a percentage; position is an average where LOWER is better; dates default to the last 30 days ending 3 days ago because GSC data lags about 3 days."""
 

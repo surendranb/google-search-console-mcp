@@ -5,7 +5,8 @@
       "page",
       "query",
       "searchAppearance",
-      "date"
+      "date",
+      "brandedClassification"
     ],
     "operators": {
       "equals": "Exact match for the specified value",
@@ -21,7 +22,8 @@
       "video",
       "news",
       "discover",
-      "googleNews"
+      "googleNews",
+      "webMultimodal"
     ],
     "filter_examples": {
       "country_filter": {
@@ -53,7 +55,19 @@
         "dimension": "date",
         "operator": "equals",
         "expression": "2024-01-15"
+      },
+      "branded_filter": {
+        "dimension": "brandedClassification",
+        "operator": "equals",
+        "expression": "BRANDED"
       }
+    },
+    "filter_lists": {
+      "note": "filterLists matches several exact values for one dimension in one request. Dimension must be country or device. A dimension cannot appear in both filters and filterLists.",
+      "example": [
+        {"dimension": "country", "expressions": ["usa", "gbr", "deu"]},
+        {"dimension": "device", "expressions": ["MOBILE", "TABLET"]}
+      ]
     },
     "device_values": [
       "DESKTOP",

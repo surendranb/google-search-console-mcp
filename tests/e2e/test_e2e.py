@@ -314,7 +314,8 @@ async def test_protocol_surfaces_legacy_era(tmp_path):
                 text = r.content[0].text
                 assert text == json.dumps(
                     {"error": "Invalid filter dimension 'bogus'. Valid dimensions: "
-                              "['country', 'device', 'page', 'query', 'searchAppearance', 'date']"},
+                              "['country', 'device', 'page', 'query', 'searchAppearance', 'date', "
+                              "'brandedClassification']"},
                     indent=2)
                 assert r.structured_content == {"result": json.loads(text)}
 

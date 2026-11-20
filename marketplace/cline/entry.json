@@ -23,7 +23,7 @@
       "google-search-console-mcp",
       "--",
       "uvx",
-      "google-search-console-mcp==0.11.3"
+      "google-search-console-mcp==0.12.0"
     ],
     "env": [
       {

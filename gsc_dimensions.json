@@ -23,6 +23,10 @@
       {
         "api_name": "date",
         "description": "The date of the user's query, in YYYY-MM-DD format."
+      },
+      {
+        "api_name": "brandedClassification",
+        "description": "Google's own branded vs non-branded query classification; each row is 'BRANDED' or 'NON_BRANDED'. Usable as a dimension and as a filter dimension (operator 'equals' only). Data exists from 2026-02-21 onward and only for top-level properties with sufficient query and impression volume; other properties return no rows for it. Cannot be combined with a 'query' filter in the same request."
       }
     ]
   }

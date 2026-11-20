@@ -181,7 +181,131 @@ class GetSearchAnalyticsRequestBodyTests(unittest.TestCase):
             dimensions=["QUERY", "Page"], search_type="WEB"
         ))
         self.assertEqual(self.captured_body["dimensions"], ["query", "page"])
-        self.assertEqual(self.captured_body["searchType"], "web")
+        # `type` is the API's current field; `searchType` is deprecated.
+        self.assertEqual(self.captured_body["type"], "web")
+        self.assertNotIn("searchType", self.captured_body)
+
+
+class NewSearchAnalyticsSurfaceTests(unittest.TestCase):
+    """0.12.0: brandedClassification, webMultimodal, filterLists, and the
+    eligibility caveat that stops an empty branded result reading as zero."""
+
+    def setUp(self):
+        self.bodies = []
+        self.responses = []
+
+        def fake_get_gsc_service():
+            service = MagicMock()
+
+            def _query(siteUrl=None, body=None, **kwargs):
+                self.bodies.append(body or {})
+                resp = MagicMock()
+                resp.execute.return_value = self.responses.pop(0) if self.responses else {"rows": []}
+                return resp
+
+            service.searchanalytics.return_value.query.side_effect = _query
+            return service
+
+        self._orig = gsc_mcp_server.get_gsc_service
+        gsc_mcp_server.get_gsc_service = fake_get_gsc_service
+
+    def tearDown(self):
+        gsc_mcp_server.get_gsc_service = self._orig
+
+    def test_branded_classification_is_a_dimension_and_a_filter_field(self):
+        asyncio.run(gsc_mcp_server.get_search_analytics(dimensions=["brandedClassification"]))
+        self.assertEqual(self.bodies[0]["dimensions"], ["brandedClassification"])
+
+        self.responses = [{"rows": [{"keys": ["/pricing"], "clicks": 1, "impressions": 10,
+                                     "ctr": 0.1, "position": 3.0}]}]
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["page"],
+            filters=[{"dimension": "brandedClassification", "operator": "equals",
+                      "expression": "branded"}],
+        ))
+        self.assertNotIn("error", result, msg=result)
+        self.assertEqual(
+            self.bodies[-1]["dimensionFilterGroups"][0]["filters"][0],
+            {"dimension": "brandedClassification", "operator": "equals",
+             "expression": "BRANDED"},
+        )
+
+    def test_branded_filter_rejects_unsupported_operator(self):
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["page"],
+            filters=[{"dimension": "brandedClassification", "operator": "contains",
+                      "expression": "BRANDED"}],
+        ))
+        self.assertIn("error", result)
+        self.assertEqual(self.bodies, [])
+
+    def test_web_multimodal_is_accepted_search_type(self):
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["page"], search_type="webMultimodal"
+        ))
+        self.assertNotIn("error", result, msg=result)
+        self.assertEqual(self.bodies[0]["type"], "webMultimodal")
+
+    def test_filter_lists_builds_multi_value_filter(self):
+        asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["page"],
+            filter_lists=[
+                {"dimension": "country", "expressions": ["usa", "gbr", "deu"]},
+                {"dimension": "device", "expressions": ["MOBILE", "TABLET"]},
+            ],
+        ))
+        self.assertEqual(
+            self.bodies[0]["dimensionFilterGroups"][0]["filterLists"],
+            [{"dimension": "country", "expressions": ["usa", "gbr", "deu"]},
+             {"dimension": "device", "expressions": ["MOBILE", "TABLET"]}],
+        )
+
+    def test_filter_lists_cannot_repeat_a_filters_dimension(self):
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["page"],
+            filters=[{"dimension": "country", "operator": "equals", "expression": "usa"}],
+            filter_lists=[{"dimension": "country", "expressions": ["usa", "gbr"]}],
+        ))
+        self.assertIn("error", result)
+        self.assertEqual(self.bodies, [])
+
+    def test_empty_branded_response_says_unknown_not_zero(self):
+        """An ineligible property returns zero rows. The payload must say the
+        share is unknown, not that branded traffic is zero."""
+        self.responses = [{"rows": []}, {"rows": []}]  # request, eligibility probe
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["brandedClassification"]
+        ))
+        self.assertEqual(result["data"], [])
+        self.assertEqual(result["metadata"]["total_rows"], 0)
+        caveat = result["caveat"]
+        self.assertIn("UNKNOWN", caveat)
+        self.assertIn("do not report it as 0%", caveat)
+        self.assertEqual(len(self.bodies), 2)
+
+    def test_empty_branded_response_on_eligible_property_is_an_empty_slice(self):
+        self.responses = [
+            {"rows": []},
+            {"rows": [{"keys": ["NON_BRANDED"], "clicks": 1, "impressions": 250,
+                       "ctr": 0.004, "position": 8.0}]},
+        ]
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["brandedClassification"]
+        ))
+        caveat = result["caveat"]
+        self.assertIn("IS eligible", caveat)
+        self.assertIn("non-branded impressions 250", caveat)
+        self.assertNotIn("UNKNOWN", caveat)
+
+    def test_branded_window_before_data_start_says_unavailable(self):
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(
+            dimensions=["brandedClassification"],
+            start_date="2025-12-01",
+            end_date="2025-12-31",
+        ))
+        self.assertIn("2026-02-21", result["caveat"])
+        self.assertIn("not zero branded traffic", result["caveat"])
+        self.assertEqual(len(self.bodies), 1)  # no probe needed
 
 
 class DimensionSchemaConstraintTest(unittest.TestCase):
