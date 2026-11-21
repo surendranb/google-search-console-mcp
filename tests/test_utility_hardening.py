@@ -230,5 +230,70 @@ class TestGSCUtilityHardening(unittest.TestCase):
         self.assertIn("gsc_setup.md", res_err["error"])
 
 
+class TestErrorFormatterStatusFirst(unittest.TestCase):
+    """One formatter, tested status-first: 429/503/504 -> retry-once directive,
+    401/403 -> setup brief, residual -> named brief. The verbatim 0.12.1 strings
+    "Error fetching sites: timed out" and "Error inspecting URL: The read
+    operation timed out" must not be reproducible."""
+
+    def setUp(self):
+        self.mock_service = MagicMock()
+        gsc.get_gsc_service = lambda: self.mock_service
+        self._saved_init_error = gsc.SERVER_INIT_ERROR
+        gsc.SERVER_INIT_ERROR = None
+
+    def tearDown(self):
+        gsc.SERVER_INIT_ERROR = self._saved_init_error
+
+    def test_list_gsc_sites_503_returns_retry_once(self):
+        self.mock_service.sites().list().execute.side_effect = Exception(
+            "503 The service is currently unavailable.")
+        text = gsc.list_gsc_sites()["error"]
+        self.assertIn("Retry this exact call ONCE", text)
+        self.assertIn("Transient upstream failure (429/503/504)", text)
+        self.assertIn("UPSTREAM SAID: 503", text)
+        self.assertNotIn("Error fetching sites:", text)
+        self.assertEqual(gsc._LAST_BRIEF["brief_version"], gsc.BRIEF_TRANSIENT)
+
+    def test_list_gsc_sites_timeout_returns_retry_once(self):
+        self.mock_service.sites().list().execute.side_effect = Exception("timed out")
+        text = gsc.list_gsc_sites()["error"]
+        self.assertIn("Retry this exact call ONCE", text)
+        self.assertNotIn("Error fetching sites:", text)
+
+    def test_inspect_url_timeout_returns_retry_once(self):
+        inspect = self.mock_service.urlInspection().index().inspect
+        inspect.return_value.execute.side_effect = Exception("The read operation timed out")
+        text = gsc.inspect_url("https://default.example.com/page")["error"]
+        self.assertIn("Retry this exact call ONCE", text)
+        self.assertNotIn("Error inspecting URL:", text)
+
+    def test_403_still_gets_the_iam_brief(self):
+        self.mock_service.sites().list().execute.side_effect = Exception(
+            "403 PERMISSION_DENIED: caller does not have permission")
+        text = gsc.list_gsc_sites()["error"]
+        self.assertIn("[SETUP BLOCKED]", text)
+        self.assertIn("Users and permissions", text)
+        self.assertNotIn("Retry this exact call ONCE", text)
+        self.assertEqual(gsc._LAST_BRIEF["error_category"], "IAMError")
+
+    def test_residual_failure_gets_a_named_brief(self):
+        self.mock_service.sites().list().execute.side_effect = Exception("400 invalid date range")
+        text = gsc.list_gsc_sites()["error"]
+        self.assertIn("[SEARCH CONSOLE REJECTED THIS CALL: listing verified sites]", text)
+        self.assertIn("NEXT CALL: list_available_dimensions()", text)
+        self.assertIn("UPSTREAM SAID: 400 invalid date range", text)
+        self.assertNotIn("Error fetching sites:", text)
+        self.assertEqual(gsc._LAST_BRIEF["brief_version"], gsc.BRIEF_RESIDUAL)
+
+    def test_no_status_family_leaks_a_bare_library_string(self):
+        for exc in (Exception("503 unavailable"), Exception("timed out"),
+                    Exception("403 forbidden"), Exception("401 malformed"),
+                    Exception("500 internal")):
+            text = gsc._api_error_text(exc, "listing verified sites")
+            self.assertIsInstance(text, str, repr(exc))
+            self.assertNotRegex(text, r"^Error (fetching|inspecting)")
+
+
 if __name__ == "__main__":
     unittest.main()
