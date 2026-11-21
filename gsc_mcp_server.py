@@ -51,6 +51,8 @@ BRIEF_CREDS_MISSING = "gsc-creds-missing-v1"
 BRIEF_SITE_UNSET = "gsc-site-unset-v1"
 BRIEF_403_PROPERTY = "gsc-403-property-v1"
 BRIEF_401_INVALID = "gsc-401-invalid-v1"
+BRIEF_TRANSIENT = "gsc-transient-v1"
+BRIEF_RESIDUAL = "gsc-residual-v1"
 
 
 def _compute_init_state():
@@ -136,15 +138,37 @@ _AUTH_401_MARKERS = (
 )
 _AUTH_403_MARKERS = ("403", "permissiondenied", "permission denied", "forbidden",
                      "insufficient permission", "does not have sufficient permission")
+# Upstream Search Console failures that retry cleanly — quota (429), service
+# unavailable (503), gateway timeout (504) and the httplib/socket timeout
+# spellings that reached the model verbatim at 0.12.1 ("Error fetching sites:
+# timed out", "Error inspecting URL: The read operation timed out").
+_TRANSIENT_MARKERS = (
+    "429", "503", "504", "unavailable", "resource_exhausted", "resourceexhausted",
+    "timed out", "timeout", "deadline", "backend error", "connection reset",
+    "connection aborted", "stream removed", "recvmsg", "socket closed",
+)
 
 
 def _api_error_text(e, operation):
-    """S3 hook for the API tools' except blocks: user-fixable auth failures get
-    a versioned two-audience brief; every other error keeps the legacy text
-    byte-for-byte (built by the caller). Returns brief text or None."""
+    """The ONE model-facing error formatter for this server, tested status-first:
+    a 429/503/504 or timeout is GA4-style transient (retry once, nothing for the
+    user to fix), a 401/403 is a setup brief, and everything else gets a named
+    field-shape brief. Never returns None, so no bare library string can reach
+    the model. Returns brief text."""
     try:
         err = str(e)
         low = err.lower()
+        # STATUS FIRST. Text matching alone sent 503s and timeouts to the
+        # auth/setup briefs in 2.12.x (GA4) — same ordering here.
+        if any(m in low for m in _TRANSIENT_MARKERS):
+            _set_brief(BRIEF_TRANSIENT, "TransientError")
+            return (f"[TRANSIENT UPSTREAM — NOT A SETUP PROBLEM] Google's Search Console API "
+                    f"returned a temporary failure while {operation}.  "
+                    "WHY: this is Google's own availability, not your credentials, property, or query.  "
+                    "SYSTEM DIRECTIVE: Transient upstream failure (429/503/504) — your request is NOT wrong. "
+                    "Retry this exact call ONCE, unchanged; if it fails again, stop and tell the user the "
+                    "Search Console API is having a temporary outage. Do not change fields, dates, or "
+                    f"config to work around it.  UPSTREAM SAID: {err[:200]}")
         if any(m in low for m in _AUTH_403_MARKERS):
             _set_brief(BRIEF_403_PROPERTY, "IAMError")
             return _guided_error(
@@ -175,6 +199,18 @@ def _api_error_text(e, operation):
                     "client supports interactive prompts.",
                 ],
             ) + f"  [Original error: {err[:200]}]"
+        # Residual: name the family and the next call. A library string alone
+        # tells the model nothing it can act on or relay.
+        _set_brief(BRIEF_RESIDUAL, "APIError")
+        return (f"[SEARCH CONSOLE REJECTED THIS CALL: {operation}] Google returned an error that is "
+                "not a credential, permission, or setup problem.  "
+                "WHY: the dimensions, metrics, filter shape, date range, or row limit this call sent "
+                "do not match what Search Console accepts (400), or Google failed the request for a "
+                "reason it did not classify.  "
+                "NEXT CALL: list_available_dimensions() and list_available_metrics() for this "
+                "property's live names, skill_read('gsc_filters') if a filter was involved, or a "
+                "narrower date range — do not resend this exact request unchanged.  "
+                f"UPSTREAM SAID: {err[:300]}")
     except Exception:
         pass
     return None
@@ -654,7 +690,8 @@ def reinitialize():
             SERVER_INIT_ERROR = brief
             SERVER_INIT_ERROR_CATEGORY = _LAST_BRIEF["error_category"] or "InternalError"
             SERVER_INIT_ERROR_BRIEF_VERSION = _LAST_BRIEF["brief_version"]
-            cat = "property_access" if _LAST_BRIEF["error_category"] == "IAMError" else "invalid_credentials"
+            cat = {"IAMError": "property_access",
+                   "TransientError": "transient"}.get(_LAST_BRIEF["error_category"], "invalid_credentials")
             return False, cat, err
         SERVER_INIT_ERROR = f"Could not connect to Google Search Console: {err}"
         SERVER_INIT_ERROR_CATEGORY = "InternalError"
