@@ -1100,6 +1100,9 @@ def _get_search_analytics_impl(
         dim_map = {d.lower(): d for d in valid_dimensions}
         dim_map["search_appearance"] = "searchAppearance"
         dim_map["searchappearance"] = "searchAppearance"
+        if not isinstance(dimensions, (list, tuple)):
+            return {"error": f"Invalid dimensions {dimensions!r}: expected a list of names. "
+                             f"Valid dimensions: {valid_dimensions}"}
         if not dimensions:
             dimensions = ["query"]
         normalized_dims = []
@@ -1132,9 +1135,15 @@ def _get_search_analytics_impl(
                 if not filter_dim:
                     return {"error": f"Invalid filter dimension '{raw_dim}'. Valid dimensions: {valid_dimensions}"}
                 
+                operator = str(filter_item.get('operator', 'equals')).lower()
+                if operator not in ("equals", "notequals", "contains", "notcontains",
+                                    "includingregex", "excludingregex"):
+                    return {"error": f"Invalid filter operator '{filter_item.get('operator')}'. "
+                                     "Valid operators: ['equals', 'notEquals', 'contains', "
+                                     "'notContains', 'includingRegex', 'excludingRegex']"}
                 request_filters.append({
                     'dimension': filter_dim,
-                    'operator': str(filter_item.get('operator', 'equals')).lower(),
+                    'operator': operator,
                     'expression': filter_item.get('expression')
                 })
                 if filter_dim == "brandedClassification":
@@ -1209,7 +1218,11 @@ def _get_search_analytics_impl(
         }
         
         # S1: dataState support (fresh preliminary data vs finalized)
-        if fresh_data or str(data_state or "").strip().lower() == "all":
+        data_state_norm = str(data_state or "").strip().lower()
+        if data_state_norm not in ("", "final", "all"):
+            return {"error": f"Invalid data_state '{data_state}'. Valid values: ['final', 'all'] "
+                             "(or pass fresh_data=True for 'all')."}
+        if fresh_data or data_state_norm == "all":
             request['dataState'] = 'all'
         else:
             request['dataState'] = 'final'
@@ -1228,8 +1241,19 @@ def _get_search_analytics_impl(
             siteUrl=target_site,
             body=request
         ).execute()
-        
-        rows = response.get('rows', [])
+
+        if not isinstance(response, dict):
+            return {"error": (
+                f"[UPSTREAM RETURNED NO BODY] Google's Search Console API answered the search "
+                f"analytics request for {target_site} with no JSON object "
+                f"({type(response).__name__}). Nothing was rejected and the property is not "
+                "empty — this is a transport-level empty response. NEXT CALL: retry this exact "
+                "request once; if the empty body repeats, call get_data_status(site_url=...) to "
+                "confirm the property still answers, and report an empty upstream body — not "
+                "'no data' and not 'zero traffic'."
+            )}
+
+        rows = response.get('rows') or []
 
         # A branded request that returns nothing is ambiguous: ineligible
         # properties get rows omitted entirely. Say which case it is.
@@ -1238,19 +1262,35 @@ def _get_search_analytics_impl(
                          or any(f['dimension'] == "brandedClassification" for f in request_filters)):
             caveat = _branded_caveat(service, target_site, start_date, end_date,
                                      search_type, request['dataState'])
-        
+
+        # Empty rows are a state, not an error: say which state and the next call.
+        empty_note = None
+        if not rows and not caveat:
+            empty_note = (
+                f"No rows for {target_site} between {start_date} and {end_date} "
+                f"(search_type={search_type}, dimensions={dimensions}). State: upstream returned "
+                "an empty result set for this range — this is not an error and not proof of zero "
+                "traffic. NEXT CALL: get_data_status(site_url=...) to read the latest published "
+                "date, then re-query a window ending on or before it; if that also reports no "
+                "data, the property has no impressions for these dates and filters."
+            )
+
         if summary_only:
+            total_clicks = sum(r.get('clicks') or 0 for r in rows)
+            total_impr = sum(r.get('impressions') or 0 for r in rows)
             summary_payload = {
                 "summary": {
                     "site_url": target_site,
-                    "total_clicks": sum(r.get('clicks', 0) for r in rows),
-                    "total_impressions": sum(r.get('impressions', 0) for r in rows),
-                    "avg_ctr": round((sum(r.get('clicks', 0) for r in rows) / sum(r.get('impressions', 0) for r in rows)) * 100, 2) if sum(r.get('impressions', 0) for r in rows) > 0 else 0,
+                    "total_clicks": total_clicks,
+                    "total_impressions": total_impr,
+                    "avg_ctr": round((total_clicks / total_impr) * 100, 2) if total_impr > 0 else 0,
                     "row_count": len(rows)
                 }
             }
             if caveat:
                 summary_payload['caveat'] = caveat
+            elif empty_note:
+                summary_payload['note'] = empty_note
             return summary_payload
         
         # Format the response
@@ -1279,15 +1319,17 @@ def _get_search_analytics_impl(
                         data_row[dimension] = str(row['keys'][i])
             
             # Add metric values (all GSC metrics are always returned)
-            data_row['clicks'] = row.get('clicks', 0)
-            data_row['impressions'] = row.get('impressions', 0)
-            data_row['ctr'] = round(row.get('ctr', 0.0) * 100, 2)  # Convert to percentage
-            data_row['position'] = round(row.get('position', 0.0), 1)
+            data_row['clicks'] = row.get('clicks') or 0
+            data_row['impressions'] = row.get('impressions') or 0
+            data_row['ctr'] = round((row.get('ctr') or 0.0) * 100, 2)  # Convert to percentage
+            data_row['position'] = round(row.get('position') or 0.0, 1)
             
             result['data'].append(data_row)
         
         if caveat:
             result['caveat'] = caveat
+        elif empty_note:
+            result['note'] = empty_note
         return result
         
     except Exception as e:
@@ -1414,15 +1456,15 @@ def get_data_status(site_url: str | None = None, ctx: Context = None) -> dict:
             "rowLimit": 30
         }
         resp = service.searchanalytics().query(siteUrl=target_site, body=req).execute()
-        rows = resp.get("rows", [])
+        rows = (resp or {}).get("rows") or []
         
-        dates = sorted([r["keys"][0] for r in rows if "keys" in r and r["keys"]])
+        dates = sorted([r["keys"][0] for r in rows if r.get("keys") and r["keys"][0]])
         if not dates:
             # Fallback check with dataState='final'
             req["dataState"] = "final"
             resp2 = service.searchanalytics().query(siteUrl=target_site, body=req).execute()
-            rows2 = resp2.get("rows", [])
-            dates = sorted([r["keys"][0] for r in rows2 if "keys" in r and r["keys"]])
+            rows2 = (resp2 or {}).get("rows") or []
+            dates = sorted([r["keys"][0] for r in rows2 if r.get("keys") and r["keys"][0]])
 
         if not dates:
             return {
@@ -1490,7 +1532,7 @@ def inspect_url(url: str, site_url: str | None = None, ctx: Context = None) -> d
             "siteUrl": target_site
         }
         resp = service.urlInspection().index().inspect(body=body).execute()
-        result = resp.get("inspectionResult", {})
+        result = (resp or {}).get("inspectionResult", {})
         idx = result.get("indexStatusResult", {})
         mobile = result.get("mobileUsabilityResult", {})
         rich = result.get("richResultsResult", {})

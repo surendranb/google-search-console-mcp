@@ -383,3 +383,51 @@ class SingleRegistrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmptyUpstreamResponseTests(unittest.TestCase):
+    """0.12.3: an empty or null Search Console body is a state with a next call,
+    never a traceback or a 'your query was rejected' brief."""
+
+    def setUp(self):
+        self.payload = {"rows": []}
+
+        def fake_get_gsc_service():
+            service = MagicMock()
+
+            def _query(siteUrl=None, body=None, **kwargs):
+                resp = MagicMock()
+                resp.execute.return_value = self.payload
+                return resp
+
+            service.searchanalytics.return_value.query.side_effect = _query
+            return service
+
+        self._orig = gsc_mcp_server.get_gsc_service
+        gsc_mcp_server.get_gsc_service = fake_get_gsc_service
+
+    def tearDown(self):
+        gsc_mcp_server.get_gsc_service = self._orig
+
+    def test_null_response_names_the_state_and_next_call(self):
+        self.payload = None
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(dimensions=["query"]))
+        self.assertIn("error", result)
+        self.assertIn("UPSTREAM RETURNED NO BODY", result["error"])
+        self.assertIn("NEXT CALL", result["error"])
+        self.assertNotIn("REJECTED THIS CALL", result["error"])
+
+    def test_absent_rows_returns_empty_range_note(self):
+        self.payload = {}
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(dimensions=["query"]))
+        self.assertNotIn("error", result, msg=result)
+        self.assertEqual(result["data"], [])
+        self.assertIn("No rows for", result["note"])
+        self.assertIn("get_data_status", result["note"])
+
+    def test_unknown_dimension_and_data_state_return_accepted_values(self):
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(dimensions=["bogus"]))
+        self.assertIn("brandedClassification", result["error"])
+        self.assertIn("query", result["error"])
+        result = asyncio.run(gsc_mcp_server.get_search_analytics(data_state="weekly"))
+        self.assertIn("['final', 'all']", result["error"])

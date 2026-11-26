@@ -72,7 +72,7 @@ jobs:
       - name: Publish to npm
         run: |
           cd npm
-          npm publish --access public || echo "NPM publish requires interactive token or trusted publisher setup"
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
